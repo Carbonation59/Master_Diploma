@@ -432,6 +432,20 @@ services:
       NEXT_PUBLIC_API_URL: http://localhost:8080
     networks:
       - fdm-network
+
+  analysis-frontend:
+    build:
+      context: ./analysis-frontend
+      dockerfile: Dockerfile
+    container_name: analysis-frontend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      API_URL: http://gateway:8080
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+    networks:
+      - fdm-network
       
 networks:
   fdm-network:
