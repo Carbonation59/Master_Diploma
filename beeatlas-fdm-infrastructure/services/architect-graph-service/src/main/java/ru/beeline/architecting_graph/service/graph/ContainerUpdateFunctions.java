@@ -7,7 +7,6 @@ package ru.beeline.architecting_graph.service.graph;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.Result;
-import org.neo4j.driver.Session;
 import org.neo4j.driver.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

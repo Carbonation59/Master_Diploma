@@ -24,23 +24,6 @@ services:
       retries: 5
       start_period: 120s
 
-  gateway:
-    build:
-      context: ./beeatlas-fdm-infrastructure/services/gateway
-      dockerfile: Dockerfile
-    container_name: gateway
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-      - "8090:8090"
-      - "10260:10260"
-    environment:
-      DEMO_AUTH: "true"
-      SPRING_PROFILES_ACTIVE: local
-      INTEGRATION_GRAPH_SERVER_URL: http://architect-graph-service:8080
-    networks:
-      - fdm-network
-
   architect-graph-service:
     build:
       context: ./beeatlas-fdm-infrastructure/services/architect-graph-service
@@ -69,10 +52,12 @@ services:
     ports:
       - "3001:3001"
     environment:
-      API_URL: http://gateway:8080
-      NEXT_PUBLIC_API_URL: http://localhost:8080
+      API_URL: http://architect-graph-service:8080
+      NEXT_PUBLIC_API_URL: http://localhost:8083
     networks:
       - fdm-network
+    depends_on:
+      - architect-graph-service
 
 networks:
   fdm-network:

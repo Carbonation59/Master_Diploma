@@ -5,13 +5,11 @@
 package ru.beeline.architecting_graph.service.graph;
 
 import org.neo4j.driver.Result;
-import org.neo4j.driver.Session;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import ru.beeline.architecting_graph.model.*;
 import ru.beeline.architecting_graph.repository.neo4j.GenericRepository;
 import ru.beeline.architecting_graph.repository.neo4j.ContainerInstanceRepository;
-import ru.beeline.architecting_graph.repository.neo4j.ContainerRepository;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -26,8 +24,6 @@ public class ContainerInstanceUpdateFunctions {
     CreateExternalObjects createExternalObjects;
     @Autowired
     private ContainerInstanceRepository containerInstanceRepository;
-    @Autowired
-    private ContainerRepository containerRepository;
 
     public void setContainerInstanceProperties(String graphTag,
                                                ContainerInstance containerInstance, String containerInstanceName) {

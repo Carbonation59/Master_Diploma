@@ -9,21 +9,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.Result;
-import org.neo4j.driver.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.server.ResponseStatusException;
-import ru.beeline.architecting_graph.client.DocumentClient;
-import ru.beeline.architecting_graph.client.ProductClient;
 import ru.beeline.architecting_graph.dto.*;
-import ru.beeline.architecting_graph.dto.search.ArchOperationDTO;
-import ru.beeline.architecting_graph.dto.search.DeploymentNodeSearchDTO;
-import ru.beeline.architecting_graph.dto.search.DiscoveredOperationDTO;
-import ru.beeline.architecting_graph.dto.search.OperationDeploymentNodeSearchDTO;
 import ru.beeline.architecting_graph.exception.ValidationException;
 import ru.beeline.architecting_graph.model.Workspace;
 import ru.beeline.architecting_graph.repository.neo4j.*;
@@ -35,17 +26,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static ru.beeline.architecting_graph.utils.JwtUtils.isIpAddress;
-
 @Slf4j
 @Service
 public class GraphConstructionService {
 
     @Autowired
     EnvironmentRepository environmentRepository;
-
-    @Autowired
-    DocumentClient documentClient;
 
     @Autowired
     GraphUpdateFunctions graphUpdateFunctions;
@@ -71,19 +57,6 @@ public class GraphConstructionService {
     @Autowired
     GenericRepository genericRepository;
 
-    @Autowired
-    ProductClient productClient;
-
-    public ResponseEntity<String> graphConstruct(Long docId, String graphTag) {
-        log.info("graphConstruct is running");
-        String workspaceJson = documentClient.getDocument(docId);
-        if (workspaceJson == null) {
-            log.info("Документ не найден");
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Документ не найден");
-        }
-        return graphConstruct(workspaceJson, graphTag);
-    }
-
     public ResponseEntity<String> graphConstruct(String workspaceJson, String graphTag) {
         log.info("graphConstruct is running");
         Workspace workspace;
@@ -102,17 +75,6 @@ public class GraphConstructionService {
         }
         log.info("graph constructed");
         return ResponseEntity.status(HttpStatus.CREATED).body("Граф построен");
-    }
-
-    private String handleClientError(HttpClientErrorException e) {
-        HttpStatus status = e.getStatusCode();
-        if (status == HttpStatus.NOT_FOUND) {
-            return null;
-        } else if (status == HttpStatus.BAD_REQUEST) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Полученный workspace не валиден");
-        } else {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Доступ запрещен");
-        }
     }
 
     public static Workspace getWorkspaceFileForTest(ObjectMapper objectMapper) throws Exception {
@@ -138,79 +100,6 @@ public class GraphConstructionService {
         }
 
         return ResponseEntity.ok(existingDto);
-    }
-
-    public ResponseEntity<List<DeploymentNodeDTO>> getDeploymentNode(String search) {
-        List<DeploymentNodeDTO> result = new ArrayList<>();
-        Result deploymentNodes = deploymentNodesRepository.findDeploymentNodesBySearch(search);
-        if(!deploymentNodes.hasNext() && isIpAddress(search))
-        {
-            List<ProductInfraSearchDTO> products = productClient.getProductInfraByVimIp(search);
-            if(products.isEmpty()){
-                ResponseEntity.ok(result);
-            }
-            List<String> originNames = products.stream()
-                    .map(ProductInfraSearchDTO::getName)
-                    .collect(Collectors.toList());
-            originNames.forEach(name-> {
-                deploymentNodesRepository.updateIpForDeploymentNodesByOriginNames(name, products.get(0).getValue());
-            });
-
-            deploymentNodes = deploymentNodesRepository.findDeploymentNodesBySearch(search);
-        }
-        while (deploymentNodes.hasNext()) {
-            try {
-
-                Record deployment = deploymentNodes.next();
-                Record system = getParentSoftwareSystem(deployment.get("n").asNode().id());
-                Record environment = getParentEnvironment(deployment.get("n").asNode().id());
-                result.add(DeploymentNodeDTO.builder()
-                                   .id(deployment.get("n").asNode().id())
-                                   .deploymentName(deployment.get("n").asNode().get("originalName").asString())
-                                   .environmentName(environment.get("parent.name").asString())
-                                   .cmdb(system.get("d").asNode().get("cmdb").asString())
-                                   .ip(deployment.get("n").asNode().containsKey("ip") ? deployment.get("n")
-                                           .asNode()
-                                           .get("ip")
-                                           .asString() : null)
-                                   .host(deployment.get("n").asNode().containsKey("host") ? deployment.get("n")
-                                           .asNode()
-                                           .get("host")
-                                           .asString() : null)
-                                   .build());
-            } catch (Exception e){
-                log.error(e.getMessage(), e.getStackTrace());
-            }
-        }
-
-        return ResponseEntity.ok(result);
-    }
-
-    private Record getParentSoftwareSystem(Long id) {
-        Result result = softwareSystemRepository.getParentSystemByDeploymentNodeId(id);
-        if (result.hasNext()) {
-            Record record = result.next();
-            Long parentSystemId = record.get("parent").asNode().id();
-            return softwareSystemRepository.getSystemById(parentSystemId).next();
-        } else {
-            log.info("search ParentDeployment for id=" + id);
-            Result parentNodeResult = deploymentNodesRepository.getParentDeploymentNodeId(id);
-            Record record = parentNodeResult.next();
-            Long parentNodeId = record.get("parent").asNode().id();
-            return getParentSoftwareSystem(parentNodeId);
-        }
-    }
-
-    private Record getParentEnvironment(Long nodeId) {
-        Result result = environmentRepository.getDeploymentNodeEnvironmentNameByIdChild(nodeId);
-        if (result.hasNext()) {
-            return result.next();
-        } else {
-            Result parentNodeResult = deploymentNodesRepository.getParentDeploymentNodeId(nodeId);
-            Record record = parentNodeResult.next();
-            Long parentNodeId = record.get("parentNodeId").asLong();
-            return getParentEnvironment(parentNodeId);
-        }
     }
 
     public ResponseEntity<String> createSequence(List<SequenceDto> sequenceDtos) {
@@ -304,85 +193,5 @@ public class GraphConstructionService {
                 .dependentSystems(new ArrayList<>(dependentSystems))
                 .influencingSystems(new ArrayList<>(influencingSystems))
                 .build());
-    }
-
-    public ResponseEntity postTags(Long id, List<String> tags) {
-
-        if (!genericRepository.checkIfObjectExistsById(id)) {
-            return ResponseEntity
-                    .status(HttpStatus.NOT_FOUND)
-                    .body("Нода с указанным ID не существует");
-        }
-
-        Value graphTagValue = genericRepository.getObjectParameterGeneric("Global", id, "graphTag");
-        if (!"Global".equals(graphTagValue.asString())) {
-            return ResponseEntity.badRequest()
-                    .body("Нода с id = " + id + " не имеет тега 'Global'");
-        }
-        if(tags == null || tags.isEmpty()){
-            return ResponseEntity.badRequest()
-                    .body("Отсутствуют теги");
-        }
-
-        String newTags = String.join(",", tags);
-
-        try {
-            Value existingTags = genericRepository.getObjectParameterGeneric("Global", id, "specialTags");
-            String currentTags = (existingTags != null && existingTags.asString() != null) ? existingTags.asString() : "";
-            currentTags = "null".equals(currentTags) ? "" : currentTags;
-            String updatedTags = currentTags.isEmpty() ? newTags : currentTags + "," + newTags;
-            genericRepository.setObjectParameterGeneric("Global", id, "specialTags", updatedTags);
-        } catch (Exception e) {
-            genericRepository.setObjectParameterGeneric("Global", id, "specialTags", newTags);
-        }
-
-        return ResponseEntity.ok().build();
-    }
-
-    public ResponseEntity<OperationDeploymentNodeSearchDTO> getOperationWithDeploymentNodeByMethods(String path,
-                                                                                                    String type) {
-        if (path == null || path.isEmpty()) {
-            throw new ValidationException("Отсутствует обязательный параметр path");
-        }
-        log.info("callProductClient");
-        OperationDeploymentNodeSearchDTO operations = productClient.getOperations(path, type);
-        log.info("add to arch operations");
-        if(operations.getArchOperations()!=null) {
-            operations.getArchOperations().forEach(arcOperation -> {
-                fillDeploymentNode(arcOperation);
-            });
-        }
-        log.info("add to discover operations");
-        if(operations.getArchOperations()!=null) {
-            operations.getDiscoveredOperations().forEach(dsvrOperation -> {
-                fillDeploymentNode(dsvrOperation);
-            });
-        }
-        log.info("result");
-        return ResponseEntity.ok(operations);
-    }
-
-    private void fillDeploymentNode(ArchOperationDTO arcOperation) {
-        if (arcOperation.getContainer() == null || arcOperation.getProduct() == null) {
-            return;
-        }
-
-        String containerName = arcOperation.getContainer().getName();
-        String productAlias = arcOperation.getProduct().getAlias();
-
-        List<DeploymentNodeSearchDTO> deploymentNodes = genericRepository.findDeploymentNodes(containerName, productAlias);
-        arcOperation.setDeploymentsNodes(deploymentNodes);
-    }
-
-    private void fillDeploymentNode(DiscoveredOperationDTO dsvrOperation) {
-        if (dsvrOperation.getContainer() == null || dsvrOperation.getProduct() == null) {
-            return;
-        }
-
-        String containerName = dsvrOperation.getContainer().getName();
-        String productAlias = dsvrOperation.getProduct().getAlias();
-
-        List<DeploymentNodeSearchDTO> deploymentNodes = genericRepository.findDeploymentNodes(containerName, productAlias);
-        dsvrOperation.setDeploymentsNodes(deploymentNodes);
     }
 }

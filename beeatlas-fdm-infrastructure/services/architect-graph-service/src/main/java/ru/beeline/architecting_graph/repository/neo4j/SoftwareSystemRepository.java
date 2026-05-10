@@ -9,10 +9,8 @@ import org.neo4j.driver.Record;
 import org.neo4j.driver.Result;
 import org.neo4j.driver.Value;
 import org.neo4j.driver.Values;
-import org.neo4j.driver.types.Node;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
-import ru.beeline.architecting_graph.model.GraphObject;
 import ru.beeline.architecting_graph.model.SoftwareSystem;
 import ru.beeline.architecting_graph.service.graph.Neo4jSessionManager;
 

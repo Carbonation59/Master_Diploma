@@ -4,7 +4,6 @@
 
 package ru.beeline.architecting_graph.service.graph;
 
-import org.neo4j.driver.Session;
 import org.neo4j.driver.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

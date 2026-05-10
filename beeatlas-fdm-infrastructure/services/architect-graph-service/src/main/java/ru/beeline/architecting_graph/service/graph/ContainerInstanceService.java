@@ -5,21 +5,14 @@
 package ru.beeline.architecting_graph.service.graph;
 
 import org.neo4j.driver.Result;
-import org.neo4j.driver.Value;
-import org.neo4j.driver.types.Node;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import ru.beeline.architecting_graph.client.ProductClient;
-import ru.beeline.architecting_graph.dto.ErrorResponse;
 import ru.beeline.architecting_graph.model.*;
 import ru.beeline.architecting_graph.repository.neo4j.ContainerInstanceRepository;
 import ru.beeline.architecting_graph.repository.neo4j.DeploymentNodesRepository;
 import ru.beeline.architecting_graph.repository.neo4j.GenericRepository;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Service
@@ -36,9 +29,6 @@ public class ContainerInstanceService {
 
     @Autowired
     DeploymentNodesRepository deploymentNodesRepository;
-
-    @Autowired
-    ProductClient productClient;
 
 
     public void setContainerInstanceProperties(String graphTag,
@@ -134,21 +124,5 @@ public class ContainerInstanceService {
                 }
             }
         }
-    }
-
-    public ResponseEntity getContainerInstancesByDeploymentNodeId(Integer id) {
-        Result deploymentNode = deploymentNodesRepository.findActiveDeploymentNodeById(id.longValue());
-        if (!deploymentNode.hasNext()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse("DeploymentNode с указанным id не найдена"));
-        }
-        var record = deploymentNode.next();
-        Node node = record.get("n").asNode();
-        String fullName = node.get("name").asString("");
-
-        int idx = fullName.lastIndexOf('~');
-        String aliasProduct = (idx == -1) ? fullName : fullName.substring(idx + 1);
-        List<String> originalNames = record.get("containerOriginalNames").asList(Value::asString);
-        return ResponseEntity.ok(productClient.getTechCapabilitiesByContainerProduct(aliasProduct, originalNames));
     }
 }
