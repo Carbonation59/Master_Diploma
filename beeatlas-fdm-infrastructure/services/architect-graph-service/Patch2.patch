@@ -1,0 +1,501 @@
+Subject: [PATCH] Patch2
+---
+Index: src/main/java/ru/beeline/architecting_graph/service/createDiagrams/DiagramService.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/java/ru/beeline/architecting_graph/service/createDiagrams/DiagramService.java b/src/main/java/ru/beeline/architecting_graph/service/createDiagrams/DiagramService.java
+--- a/src/main/java/ru/beeline/architecting_graph/service/createDiagrams/DiagramService.java	(revision 107e7ba12cb77aa6dfcee615dbdffd4def952000)
++++ b/src/main/java/ru/beeline/architecting_graph/service/createDiagrams/DiagramService.java	(date 1762350907167)
+@@ -50,6 +50,8 @@
+ 
+     @Autowired
+     InfrastructureNodesRepository infrastructureNodesRepository;
++    @Autowired
++    private ContainerInstanceRepository containerInstanceRepository;
+ 
+     public Boolean checkifContainerExists(String softwareSystemMnemonic, String containerMnemonic) {
+         Result result = containerRepository.checkIfContainerExists(softwareSystemMnemonic, containerMnemonic);
+@@ -255,7 +257,82 @@
+         inMap.values().forEach(in->{
+             processDntoIn(in, dnMap, deploymentNodes, inMap, relMap);
+             processIntoIn(in, dnMap, deploymentNodes, inMap, relMap);
++        });
++
++        cMap.values().forEach(container -> {
++            processCCtoCC(cmdb, container, cMap, relMap, ssMap, dnMap, ciMap);
++            processComToCC(cmdb, container, cMap, relMap, ssMap, dnMap, ciMap);
++            processCCtoChildComp(cmdb, container, cMap, relMap, ssMap, dnMap, ciMap);
++            Result resultSet = genericRepository.findIncomingComponentRelationshipsExtended(Long.parseLong(String.valueOf(container.get("id"))), cmdb);
++            while (resultSet.hasNext()) {
++                var rec = resultSet.next();
++                var rel = rec.get("r").asNode();
++                var src = rec.get("src").asNode();
++                var srcComp = rec.get("srcComp").asNode();
++                var dstComp = rec.get("dstComp").asNode();
++                var ci = rec.get("ci").asNode();
++                var parentSoftwareSystem = rec.get("parentSoftwareSystem").asNode();
++                var parentDeploymentNode = rec.get("parentDeploymentNode").asNode();
+ 
++                Map<String, Object> relation = new HashMap<>();
++                relation.put("id", String.valueOf(rel.id()));
++                relation.put("sourceId", String.valueOf(srcComp.id()));
++                relation.put("destinationId", String.valueOf(dstComp.id()));
++                relation.put("description", rel.get("description").asString(null));
++                relation.put("technology", rel.get("technology").asString(null));
++                ((ArrayList) cMap.get(String.valueOf(src.id())).get("relationships")).add(relation);
++                relMap.put(String.valueOf(rel.id()), relation);
++
++                if (ssMap.containsKey(parentSoftwareSystem.get("id").asString())) {
++                    if (!cMap.containsKey(String.valueOf(src.id()))) {
++                        Map<String, Object> newContainer = new HashMap<>();
++                        newContainer.put("id", String.valueOf(src.id()));
++                        newContainer.put("name", src.get("name").asString());
++                        newContainer.put("relatioships", new ArrayList<>());
++                        cMap.put(String.valueOf(src.id()), newContainer);
++                        ((ArrayList) ssMap.get(parentSoftwareSystem.get("id")).get("containers")).add(newContainer);
++
++                    }
++                } else {
++                    Map<String, Object> newContainer = new HashMap<>();
++                    newContainer.put("id", String.valueOf(src.id()));
++                    newContainer.put("name", src.get("name").asString());
++                    newContainer.put("relationships", new ArrayList<>());
++                    cMap.put(String.valueOf(src.id()), newContainer);
++
++                    Map<String, Object> newSoftwareSystem = new HashMap<>();
++                    newSoftwareSystem.put("id", parentSoftwareSystem.get("id").asString());
++                    newSoftwareSystem.put("name", parentSoftwareSystem.get("cmdb").asString());
++                    newSoftwareSystem.put("containers", newContainer);
++                    ssMap.put(String.valueOf(src.id()), newSoftwareSystem);
++                }
++                if (dnMap.containsKey(parentDeploymentNode.get("id").asString())) {
++                    if (!ciMap.containsKey(String.valueOf(src.id()))) {
++                        Map<String, Object> containerInstance = new HashMap<>();
++                        containerInstance.put("id", ci.get("id").asString());
++                        containerInstance.put("environment","BY BEEATLAS");
++                        containerInstance.put("containerId", String.valueOf(src.id()));
++                        ciMap.put(ci.get("id").asString(), containerInstance);
++                        ((ArrayList) dnMap.get(parentDeploymentNode.get("id")).get("containerInstances")).add(containerInstance);
++                    }
++                } else {
++                    Map<String, Object> containerInstance = new HashMap<>();
++                    containerInstance.put("id", ci.get("id").asString());
++                    containerInstance.put("environment","BY BEEATLAS");
++                    containerInstance.put("containerId", String.valueOf(src.id()));
++                    ciMap.put(ci.get("id").asString(), containerInstance);
++
++                    Map<String, Object> newDeploymentNode = new HashMap<>();
++                    newDeploymentNode.put("id", parentDeploymentNode.get("id").asString());
++                    newDeploymentNode.put("name", parentDeploymentNode.get("name").asString());
++                    newDeploymentNode.put("containerInstances", containerInstance);
++                    newDeploymentNode.put("infrastructureNodes", new ArrayList<>());
++                    newDeploymentNode.put("environment", "BY BEEATLAS");
++                    newDeploymentNode.put("children", new ArrayList<>());
++                    newDeploymentNode.put("relationships", new ArrayList<>());
++                    dnMap.put(parentDeploymentNode.get("id").asString(), newDeploymentNode);
++                }
++            }
+         });
+ 
+         List<Map<String, String>> elements = new ArrayList<>();
+@@ -278,6 +355,223 @@
+         }
+     }
+ 
++    private void processCCtoChildComp(String cmdb, Map<String, Object> container, Map<String, Map<String, Object>> cMap, Map<String, Map<String, Object>> relMap, Map<String, Map<String, Object>> ssMap, Map<String, Map<String, Object>> dnMap, Map<String, Map<String, Object>> ciMap) {
++        Result resultSet = genericRepository.findIncomingContainerRelationshipsExtendedChildComponent(Long.parseLong(String.valueOf(container.get("id"))), cmdb);
++        while (resultSet.hasNext()) {
++            var rec = resultSet.next();
++            var rel = rec.get("r").asNode();
++            var src = rec.get("src").asNode();
++            var dstComp = rec.get("dstComp").asNode();
++            var ci = rec.get("ci").asNode();
++            var parentSoftwareSystem = rec.get("parentSoftwareSystem").asNode();
++            var parentDeploymentNode = rec.get("parentDeploymentNode").asNode();
++
++            Map<String, Object> relation = new HashMap<>();
++            relation.put("id", String.valueOf(rel.id()));
++            relation.put("sourceId", String.valueOf(src.id()));
++            relation.put("destinationId", String.valueOf(dstComp.id()));
++            relation.put("description", rel.get("description").asString(null));
++            relation.put("technology", rel.get("technology").asString(null));
++            ((ArrayList) cMap.get(String.valueOf(src.id())).get("relationships")).add(relation);
++            relMap.put(String.valueOf(rel.id()), relation);
++
++            if (ssMap.containsKey(parentSoftwareSystem.get("id").asString())) {
++                if (!cMap.containsKey(String.valueOf(src.id()))) {
++                    Map<String, Object> newContainer = new HashMap<>();
++                    newContainer.put("id", String.valueOf(src.id()));
++                    newContainer.put("name", src.get("name").asString());
++                    newContainer.put("relatioships", new ArrayList<>());
++                    cMap.put(String.valueOf(src.id()), newContainer);
++                    ((ArrayList) ssMap.get(parentSoftwareSystem.get("id")).get("containers")).add(newContainer);
++
++                }
++            } else {
++                Map<String, Object> newContainer = new HashMap<>();
++                newContainer.put("id", String.valueOf(src.id()));
++                newContainer.put("name", src.get("name").asString());
++                newContainer.put("relationships", new ArrayList<>());
++                cMap.put(String.valueOf(src.id()), newContainer);
++
++                Map<String, Object> newSoftwareSystem = new HashMap<>();
++                newSoftwareSystem.put("id", parentSoftwareSystem.get("id").asString());
++                newSoftwareSystem.put("name", parentSoftwareSystem.get("cmdb").asString());
++                newSoftwareSystem.put("containers", newContainer);
++                ssMap.put(String.valueOf(src.id()), newSoftwareSystem);
++            }
++            if (dnMap.containsKey(parentDeploymentNode.get("id").asString())) {
++                if (!ciMap.containsKey(String.valueOf(src.id()))) {
++                    Map<String, Object> containerInstance = new HashMap<>();
++                    containerInstance.put("id", ci.get("id").asString());
++                    containerInstance.put("environment","BY BEEATLAS");
++                    containerInstance.put("containerId", String.valueOf(src.id()));
++                    ciMap.put(ci.get("id").asString(), containerInstance);
++                    ((ArrayList) dnMap.get(parentDeploymentNode.get("id")).get("containerInstances")).add(containerInstance);
++                }
++            } else {
++                Map<String, Object> containerInstance = new HashMap<>();
++                containerInstance.put("id", ci.get("id").asString());
++                containerInstance.put("environment","BY BEEATLAS");
++                containerInstance.put("containerId", String.valueOf(src.id()));
++                ciMap.put(ci.get("id").asString(), containerInstance);
++
++                Map<String, Object> newDeploymentNode = new HashMap<>();
++                newDeploymentNode.put("id", parentDeploymentNode.get("id").asString());
++                newDeploymentNode.put("name", parentDeploymentNode.get("name").asString());
++                newDeploymentNode.put("containerInstances", containerInstance);
++                newDeploymentNode.put("infrastructureNodes", new ArrayList<>());
++                newDeploymentNode.put("environment", "BY BEEATLAS");
++                newDeploymentNode.put("children", new ArrayList<>());
++                newDeploymentNode.put("relationships", new ArrayList<>());
++                dnMap.put(parentDeploymentNode.get("id").asString(), newDeploymentNode);
++            }
++        }
++    }
++
++    private void processComToCC(String cmdb, Map<String, Object> container, Map<String, Map<String, Object>> cMap, Map<String, Map<String, Object>> relMap, Map<String, Map<String, Object>> ssMap, Map<String, Map<String, Object>> dnMap, Map<String, Map<String, Object>> ciMap) {
++        Result resultSet = genericRepository.findIncomingContainerRelationshipsExtendedComponent(Long.parseLong(String.valueOf(container.get("id"))), cmdb);
++        while (resultSet.hasNext()) {
++            var rec = resultSet.next();
++            var rel = rec.get("r").asNode();
++            var src = rec.get("src").asNode();
++            var srcComponent = rec.get("srcComponent").asNode();
++            var dst = rec.get("dst").asNode();
++            var ci = rec.get("ci").asNode();
++            var parentSoftwareSystem = rec.get("parentSoftwareSystem").asNode();
++            var parentDeploymentNode = rec.get("parentDeploymentNode").asNode();
++
++            Map<String, Object> relation = new HashMap<>();
++            relation.put("id", String.valueOf(rel.id()));
++            relation.put("sourceId", String.valueOf(srcComponent.id()));
++            relation.put("destinationId", String.valueOf(dst.id()));
++            relation.put("description", rel.get("description").asString(null));
++            relation.put("technology", rel.get("technology").asString(null));
++            ((ArrayList) cMap.get(String.valueOf(src.id())).get("relationships")).add(relation);
++            relMap.put(String.valueOf(rel.id()), relation);
++
++            if (ssMap.containsKey(parentSoftwareSystem.get("id").asString())) {
++                if (!cMap.containsKey(String.valueOf(src.id()))) {
++                    Map<String, Object> newContainer = new HashMap<>();
++                    newContainer.put("id", String.valueOf(src.id()));
++                    newContainer.put("name", src.get("name").asString());
++                    newContainer.put("relatioships", new ArrayList<>());
++                    cMap.put(String.valueOf(src.id()), newContainer);
++                    ((ArrayList) ssMap.get(parentSoftwareSystem.get("id")).get("containers")).add(newContainer);
++
++                }
++            } else {
++                Map<String, Object> newContainer = new HashMap<>();
++                newContainer.put("id", String.valueOf(src.id()));
++                newContainer.put("name", src.get("name").asString());
++                newContainer.put("relationships", new ArrayList<>());
++                cMap.put(String.valueOf(src.id()), newContainer);
++
++                Map<String, Object> newSoftwareSystem = new HashMap<>();
++                newSoftwareSystem.put("id", parentSoftwareSystem.get("id").asString());
++                newSoftwareSystem.put("name", parentSoftwareSystem.get("cmdb").asString());
++                newSoftwareSystem.put("containers", newContainer);
++                ssMap.put(String.valueOf(src.id()), newSoftwareSystem);
++            }
++            if (dnMap.containsKey(parentDeploymentNode.get("id").asString())) {
++                if (!ciMap.containsKey(String.valueOf(src.id()))) {
++                    Map<String, Object> containerInstance = new HashMap<>();
++                    containerInstance.put("id", ci.get("id").asString());
++                    containerInstance.put("environment","BY BEEATLAS");
++                    containerInstance.put("containerId", String.valueOf(src.id()));
++                    ciMap.put(ci.get("id").asString(), containerInstance);
++                    ((ArrayList) dnMap.get(parentDeploymentNode.get("id")).get("containerInstances")).add(containerInstance);
++                }
++            } else {
++                Map<String, Object> containerInstance = new HashMap<>();
++                containerInstance.put("id", ci.get("id").asString());
++                containerInstance.put("environment","BY BEEATLAS");
++                containerInstance.put("containerId", String.valueOf(src.id()));
++                ciMap.put(ci.get("id").asString(), containerInstance);
++
++                Map<String, Object> newDeploymentNode = new HashMap<>();
++                newDeploymentNode.put("id", parentDeploymentNode.get("id").asString());
++                newDeploymentNode.put("name", parentDeploymentNode.get("name").asString());
++                newDeploymentNode.put("containerInstances", containerInstance);
++                newDeploymentNode.put("infrastructureNodes", new ArrayList<>());
++                newDeploymentNode.put("environment", "BY BEEATLAS");
++                newDeploymentNode.put("children", new ArrayList<>());
++                newDeploymentNode.put("relationships", new ArrayList<>());
++                dnMap.put(parentDeploymentNode.get("id").asString(), newDeploymentNode);
++            }
++        }
++    }
++
++    private void processCCtoCC(String cmdb, Map<String, Object> container, Map<String, Map<String, Object>> cMap, Map<String, Map<String, Object>> relMap, Map<String, Map<String, Object>> ssMap, Map<String, Map<String, Object>> dnMap, Map<String, Map<String, Object>> ciMap) {
++        Result resultSet = genericRepository.findIncomingContainerRelationshipsExtendedContainer(Long.parseLong(String.valueOf(container.get("id"))), cmdb);
++        while (resultSet.hasNext()) {
++            var rec = resultSet.next();
++            var rel = rec.get("r").asNode();
++            var src = rec.get("src").asNode();
++            var dst = rec.get("dst").asNode();
++            var ci = rec.get("ci").asNode();
++            var parentSoftwareSystem = rec.get("parentSoftwareSystem").asNode();
++            var parentDeploymentNode = rec.get("parentDeploymentNode").asNode();
++
++            Map<String, Object> relation = new HashMap<>();
++            relation.put("id", String.valueOf(rel.id()));
++            relation.put("sourceId", String.valueOf(src.id()));
++            relation.put("destinationId", String.valueOf(dst.id()));
++            relation.put("description", rel.get("description").asString(null));
++            relation.put("technology", rel.get("technology").asString(null));
++            ((ArrayList) cMap.get(String.valueOf(src.id())).get("relationships")).add(relation);
++            relMap.put(String.valueOf(rel.id()), relation);
++
++            if (ssMap.containsKey(parentSoftwareSystem.get("id").asString())) {
++                if (!cMap.containsKey(String.valueOf(src.id()))) {
++                    Map<String, Object> newContainer = new HashMap<>();
++                    newContainer.put("id", String.valueOf(src.id()));
++                    newContainer.put("name", src.get("name").asString());
++                    newContainer.put("relatioships", new ArrayList<>());
++                    cMap.put(String.valueOf(src.id()), newContainer);
++                    ((ArrayList) ssMap.get(parentSoftwareSystem.get("id")).get("containers")).add(newContainer);
++
++                }
++            } else {
++                Map<String, Object> newContainer = new HashMap<>();
++                newContainer.put("id", String.valueOf(src.id()));
++                newContainer.put("name", src.get("name").asString());
++                newContainer.put("relationships", new ArrayList<>());
++                cMap.put(String.valueOf(src.id()), newContainer);
++
++                Map<String, Object> newSoftwareSystem = new HashMap<>();
++                newSoftwareSystem.put("id", parentSoftwareSystem.get("id").asString());
++                newSoftwareSystem.put("name", parentSoftwareSystem.get("cmdb").asString());
++                newSoftwareSystem.put("containers", newContainer);
++                ssMap.put(String.valueOf(src.id()), newSoftwareSystem);
++            }
++            if (dnMap.containsKey(parentDeploymentNode.get("id").asString())) {
++                if (!ciMap.containsKey(String.valueOf(src.id()))) {
++                    Map<String, Object> containerInstance = new HashMap<>();
++                    containerInstance.put("id", ci.get("id").asString());
++                    containerInstance.put("environment","BY BEEATLAS");
++                    containerInstance.put("containerId", String.valueOf(src.id()));
++                    ciMap.put(ci.get("id").asString(), containerInstance);
++                    ((ArrayList) dnMap.get(parentDeploymentNode.get("id")).get("containerInstances")).add(containerInstance);
++                }
++            } else {
++                Map<String, Object> containerInstance = new HashMap<>();
++                containerInstance.put("id", ci.get("id").asString());
++                containerInstance.put("environment","BY BEEATLAS");
++                containerInstance.put("containerId", String.valueOf(src.id()));
++                ciMap.put(ci.get("id").asString(), containerInstance);
++
++                Map<String, Object> newDeploymentNode = new HashMap<>();
++                newDeploymentNode.put("id", parentDeploymentNode.get("id").asString());
++                newDeploymentNode.put("name", parentDeploymentNode.get("name").asString());
++                newDeploymentNode.put("containerInstances", containerInstance);
++                newDeploymentNode.put("infrastructureNodes", new ArrayList<>());
++                newDeploymentNode.put("environment", "BY BEEATLAS");
++                newDeploymentNode.put("children", new ArrayList<>());
++                newDeploymentNode.put("relationships", new ArrayList<>());
++                dnMap.put(parentDeploymentNode.get("id").asString(), newDeploymentNode);
++            }
++        }
++    }
++
+     private void processIntoIn(Map<String, Object> in,
+                                Map<String, Map<String, Object>> dnMap,
+                                List<Map<String, Object>> deploymentNodes,
+@@ -295,7 +589,7 @@
+             relation.put("destinationId", String.valueOf(dst.id()));
+             relation.put("description", rel.get("description").asString(null));
+             relation.put("technology", rel.get("technology").asString(null));
+-            ((ArrayList) inMap.get(dst.get("id")).get("relatioships")).add(relation);
++            ((ArrayList) inMap.get(dst.get("id")).get("relationships")).add(relation);
+             relMap.put(String.valueOf(rel.id()), relation);
+ 
+             if(!inMap.containsKey(src.get("id"))) {
+@@ -343,7 +637,7 @@
+                 newDeploymentNode.put("environment", "BY BEEATLAS");
+                 deploymentNodes.add(newDeploymentNode);
+             }
+-            ((ArrayList) inMap.get(src.get("id")).get("relatioships")).add(relation);
++            ((ArrayList) inMap.get(src.get("id")).get("relationships")).add(relation);
+             relMap.put(String.valueOf(rel.id()), relation);
+ 
+         }
+@@ -366,7 +660,7 @@
+             relation.put("destinationId", String.valueOf(dst.id()));
+             relation.put("description", rel.get("description").asString(null));
+             relation.put("technology", rel.get("technology").asString(null));
+-            ((ArrayList) dnMap.get(dst.get("id")).get("relatioships")).add(relation);
++            ((ArrayList) dnMap.get(dst.get("id")).get("relationships")).add(relation);
+             relMap.put(String.valueOf(rel.id()), relation);
+ 
+             if(!inMap.containsKey(src.get("id"))) {
+@@ -414,7 +708,7 @@
+                 newDeploymentNode.put("environment", "BY BEEATLAS");
+                 deploymentNodes.add(newDeploymentNode);
+             }
+-            ((ArrayList) dnMap.get(dst.get("id")).get("relatioships")).add(relation);
++            ((ArrayList) dnMap.get(dst.get("id")).get("relationships")).add(relation);
+             relMap.put(String.valueOf(rel.id()), relation);
+ 
+         }
+@@ -453,7 +747,7 @@
+             Map<String, Object> container = new HashMap<>();
+             container.put("id", String.valueOf(cNode.id()));
+             container.put("name", cNode.get("name").asString());
+-            container.put("relatioships", new ArrayList<>());
++            container.put("relationships", new ArrayList<>());
+             containers.add(container);
+             cMap.put(String.valueOf(cNode.id()), container);
+ 
+Index: src/main/java/ru/beeline/architecting_graph/repository/neo4j/GenericRepository.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/java/ru/beeline/architecting_graph/repository/neo4j/GenericRepository.java b/src/main/java/ru/beeline/architecting_graph/repository/neo4j/GenericRepository.java
+--- a/src/main/java/ru/beeline/architecting_graph/repository/neo4j/GenericRepository.java	(revision 107e7ba12cb77aa6dfcee615dbdffd4def952000)
++++ b/src/main/java/ru/beeline/architecting_graph/repository/neo4j/GenericRepository.java	(date 1762350708099)
+@@ -1,7 +1,6 @@
+ package ru.beeline.architecting_graph.repository.neo4j;
+ 
+ import lombok.extern.slf4j.Slf4j;
+-import org.neo4j.driver.Record;
+ import org.neo4j.driver.Result;
+ import org.neo4j.driver.Value;
+ import org.neo4j.driver.Values;
+@@ -10,11 +9,6 @@
+ import ru.beeline.architecting_graph.model.*;
+ import ru.beeline.architecting_graph.service.graph.Neo4jSessionManager;
+ 
+-import java.util.ArrayList;
+-import java.util.HashMap;
+-import java.util.List;
+-import java.util.Map;
+-
+ @Slf4j
+ @Repository
+ public class GenericRepository {
+@@ -76,6 +70,101 @@
+                 Value params = Values.parameters("deploymentNodeId", deploymentNodeId);
+                 return neo4jSessionManager.getSession().run(cypher, params);
+         }
++
++        public Result findIncomingContainerRelationshipsExtendedContainer(Long containerId, String cmdb) {
++                String cypher = """
++        MATCH (src:Container)-[r:Relationship]->(dst:Container)
++        WHERE id(dst) = $containerId
++          AND (src)-[:Deploy]->(:ContainerInstance)
++          AND EXISTS {
++                MATCH (ssCheck:SoftwareSystem)-[:Child]->(src)
++                WHERE ssCheck.cmdb <> $cmdb
++          }
++        OPTIONAL MATCH (ss:SoftwareSystem)-[:Child]->(src)
++        OPTIONAL MATCH (src)-[:Deploy]->(ci:ContainerInstance)<-[:Child]-(dn:DeploymentNode)
++        RETURN 
++            r, src, dst, ci,
++            ss AS parentSoftwareSystem,
++            dn AS parentDeploymentNode
++            
++        """;
++
++                Value params = Values.parameters("containerId", containerId, "cmdb", cmdb);
++                return neo4jSessionManager.getSession().run(cypher, params);
++        }
++
++        public Result findIncomingContainerRelationshipsExtendedComponent(Long containerId, String cmdb) {
++                String cypher = """
++                            MATCH (srcComponent:Component)-[r:Relationship]->(dst:Container)
++                            WHERE id(dst) = $containerId
++                              AND EXISTS {
++                                  MATCH (src:Container)-[:Child]->(srcComponent)
++                                  WHERE 
++                                      (src)-[:Deploy]->(:ContainerInstance)
++                                      AND EXISTS {
++                                          MATCH (ssCheck:SoftwareSystem)-[:Child]->(src)
++                                          WHERE ssCheck.cmdb <> $cmdb
++                                      }
++                              }
++                            OPTIONAL MATCH (src:Container)-[:Child]->(srcComponent)
++                            OPTIONAL MATCH (ss:SoftwareSystem)-[:Child]->(src)
++                            OPTIONAL MATCH (src)-[:Deploy]->(ci:ContainerInstance)<-[:Child]-(dn:DeploymentNode)
++                            RETURN
++                                r, src, dst, ci, srcComponent,
++                                ss AS parentSoftwareSystem,
++                                dn AS parentDeploymentNode
++                        """;
++
++                Value params = Values.parameters("containerId", containerId, "cmdb", cmdb);
++                return neo4jSessionManager.getSession().run(cypher, params);
++        }
++
++        public Result findIncomingContainerRelationshipsExtendedChildComponent(Long containerId, String cmdb) {
++                String cypher = """
++                            MATCH (dst:Container)-[:Child]->(dstComp:Component)
++                            WHERE id(dst) = $containerId
++                            MATCH (src:Container)-[r:Relationship]->(dstComp)
++                            WHERE 
++                                (src)-[:Deploy]->(:ContainerInstance)
++                                AND EXISTS {
++                                    MATCH (ssCheck:SoftwareSystem)-[:Child]->(src)
++                                    WHERE ssCheck.cmdb <> $cmdb
++                                }
++                            OPTIONAL MATCH (ss:SoftwareSystem)-[:Child]->(src)
++                            OPTIONAL MATCH (src)-[:Deploy]->(ci:ContainerInstance)<-[:Child]-(dn:DeploymentNode)
++                            RETURN
++                                r, src, dst, ci, dstComp,
++                                ss AS parentSoftwareSystem,
++                                dn AS parentDeploymentNode
++                        """;
++
++                Value params = Values.parameters("containerId", containerId, "cmdb", cmdb);
++                return neo4jSessionManager.getSession().run(cypher, params);
++        }
++
++        public Result findIncomingComponentRelationshipsExtended(Long containerId, String cmdb) {
++                String cypher = """
++                            MATCH (parentContainer:Container)-[:Child]->(dstComp:Component)
++                            WHERE id(parentContainer) = $containerId
++                            MATCH (srcComp:Component)-[r:Relationship]->(dstComp)
++                            MATCH (src:Container)-[:Child]->(srcComp)
++                            WHERE 
++                                (src)-[:Deploy]->(:ContainerInstance)
++                                AND EXISTS {
++                                    MATCH (ssCheck:SoftwareSystem)-[:Child]->(src)
++                                    WHERE ssCheck.cmdb <> $cmdb
++                                }
++                            OPTIONAL MATCH (ss:SoftwareSystem)-[:Child]->(src)
++                            OPTIONAL MATCH (src)-[:Deploy]->(ci:ContainerInstance)<-[:Child]-(dn:DeploymentNode)
++                            RETURN 
++                                r, srcComp, dstComp, src, parentContainer, ci,
++                                ss AS parentSoftwareSystem,
++                                dn AS parentDeploymentNode
++                        """;
++
++                Value params = Values.parameters("containerId", containerId, "cmdb", cmdb);
++                return neo4jSessionManager.getSession().run(cypher, params);
++        }
+ 
+         public Result findIncomingDeploymentNodeRelationshipsFromInfrastructureNode(Long deploymentNodeId) {
+                 String cypher = "MATCH (src:InfrastructureNode)-[r:Relationship]->(dst:DeploymentNode) "

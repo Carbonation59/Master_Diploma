@@ -1,0 +1,102 @@
+services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: architect-graph-neo4j
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*
+    ports:
+      - "7474:7474"  # HTTP - Neo4j Browser
+      - "7687:7687"  # Bolt protocol
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+    networks:
+      - beeatlas-network
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password", "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    user: "rabbitmq:rabbitmq"
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-secret-cookie-for-dev}
+    command: >
+      sh -c "
+        rabbitmq-server &
+        sleep 20;
+        rabbitmqadmin declare queue name=create_local_graph durable=true;
+        rabbitmqadmin declare queue name=build_local_graph durable=true;
+        rabbitmqadmin declare queue name=build_global_graph durable=true;
+        rabbitmqadmin declare queue name=create_global_graph durable=true;
+        wait
+      "
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - beeatlas-network
+
+
+  architect-graph-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: architect-graph-service
+    environment:
+      SPRING_NEO4J_URI: bolt://neo4j:7687
+      SPRING_NEO4J_AUTHENTICATION_USERNAME: neo4j
+      SPRING_NEO4J_AUTHENTICATION_PASSWORD: password
+      JAVA_OPTS: -Xmx512m -Xms256m
+      SPRING_SERVICES_DOCUMENTS_URL: "http://document-service"
+      SPRING_RABBITMQ_VIRTUAL_HOST: ${RABBITMQ_VHOST:-/}
+      SPRING_RABBITMQ_TEMPLATE_EXCHANGE: ${RABBITMQ_EXCHANGE:-capability.exchange}
+      SPRING_RABBITMQ_TEMPLATE_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY:-capability.routing}
+      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      SPRING_REDIS_HOST: "redis"
+      SPRING_REDIS_PORT: "6379"
+      SPRING_REDIS_PASSWORD: "redis-password"
+      INTEGRATION_AUTHSSO_SERVER_URL: "ambassador-auth-sso"
+      INTEGRATION_PRODUCT_SERVER_URL: "products-server"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "opentelemetry"
+
+    ports:
+      - "8080:8080"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    networks:
+      - beeatlas-network
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  neo4j_plugins:
+  rabbitmq_data:
+
+networks:
+  beeatlas-network:
+    driver: bridge

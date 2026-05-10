@@ -1,0 +1,19 @@
+{
+    "name": "Maven DevContainer",
+    "dockerComposeFile": "../docker-compose.yml",
+    "service": "app",
+    "workspaceFolder": "/app",
+    "postCreateCommand": "mvn clean install",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "java.home": "/usr/local/openjdk-17"
+            },
+            "extensions": [
+                "vscjava.vscode-java-pack",
+                "pivotal.vscode-spring-boot",
+                "vscjava.vscode-maven"
+            ]
+        }
+    }
+}
