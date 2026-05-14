@@ -26,7 +26,7 @@ services:
 
   architect-graph-service:
     build:
-      context: ./beeatlas-fdm-infrastructure/services/architect-graph-service
+      context: ./architect-graph-service
       dockerfile: Dockerfile
     container_name: architect-graph-service
     depends_on:
