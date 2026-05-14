@@ -193,8 +193,9 @@ public class AnalyseService {
             Map<String, Object> graph = new HashMap<>();
 
             if (nodeIdentifiers.equals("")) {
-                graph.put("throughput", 0.0);
+                graph.put("rps", 0.0);
                 graph.put("error_rate", 0.0);
+                graph.put("latency", 0.0);
                 graph.put("nodes", Collections.emptyList());
                 graph.put("edges", Collections.emptyList());
 
@@ -207,12 +208,14 @@ public class AnalyseService {
             Result result = analyseRepository.findPathCapacity(nodeTypes, relTypes, nodeIdentifiers);
             Record record = result.next();
 
-            double throughput = record.get("throughput").asDouble();
+            double rps = record.get("rps").asDouble();
             double errorRate = record.get("error_rate").asDouble();
+            double latency = record.get("latency").asDouble();
             Path path = record.get("path").asPath();
 
-            graph.put("throughput", throughput);
+            graph.put("rps", rps);
             graph.put("error_rate", errorRate);
+            graph.put("latency", latency);
 
             List<Map<String, Object>> nodesList = new ArrayList<>();
             for (Node node : path.nodes()) {

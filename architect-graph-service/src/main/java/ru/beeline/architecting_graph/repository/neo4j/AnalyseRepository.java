@@ -76,13 +76,6 @@ public class AnalyseRepository {
 
     public Result findPathCapacity(String nodeTypes, String relTypes, String nodeIdentifiers) {
         String param = "structurizr_dsl_identifier";
-        String nullRPS = "0.0";
-        String fullCapacity = "node.rps * (1 - node.error_rate) / node.latency"; // минимальный
-        String nullErrRateCapacity = "node.rps / node.latency"; // сумма
-        String nullLatencyCapacity = "node.rps * (1 - node.error_rate)";
-        String notNullCapacity = "node.rps";
-        String nullErrRate = "1.0"; // 1 - err и перемножаем
-        String resErrRate = "exp(sum(log(nodeErrorFactor)))";
         String query = "WITH " + nodeIdentifiers + "AS nodeIds UNWIND nodeIds AS id MATCH (n {" + param + ": id}) "
                 + "WITH collect(n) AS nodes WITH nodes, size(nodes) AS cnt UNWIND range(0, cnt-2) AS i "
                 + "WITH nodes[i] AS startNode, nodes[i+1] AS endNode, i, cnt "
@@ -90,15 +83,15 @@ public class AnalyseRepository {
                 + "WITH i, pathSegment, cnt ORDER BY i WITH cnt, collect(pathSegment) AS segs WHERE size(segs) = cnt - 1 "
                 + "WITH reduce(full = segs[0], i IN range(1, size(segs)-1) | apoc.path.combine(full, segs[i])) AS path "
                 + "WHERE path IS NOT NULL WITH path, nodes(path) AS pathNodes UNWIND pathNodes AS node "
-                + "WITH path, CASE WHEN node.rps IS NULL THEN " + nullRPS + " ELSE CASE "
-                + "WHEN node.latency IS NOT NULL AND node.latency <> 0 AND node.error_rate IS NOT NULL "
-                + "THEN " + fullCapacity + " "
-                + "WHEN node.latency IS NOT NULL AND node.latency <> 0 THEN " + nullErrRateCapacity + " "
-                + "WHEN node.error_rate IS NOT NULL THEN " + nullLatencyCapacity + " ELSE " + notNullCapacity + " END "
-                + "END AS nodeThroughput, CASE WHEN node.error_rate IS NOT NULL THEN node.error_rate ELSE "
-                + nullErrRate + " END AS nodeErrorFactor "
-                + "WITH path, min(nodeThroughput) AS throughput, " + resErrRate + " AS error_rate "
-                + "RETURN path, throughput, error_rate";
+                + "WITH path, "
+                + "CASE WHEN node.rps IS NULL THEN 0.0 ELSE node.rps END AS rps_node, "                         // rps
+                + "CASE WHEN node.error_rate IS NULL THEN 0.0 ELSE node.error_rate END AS error_rate_node, "    // error_rate
+                + "CASE WHEN node.latency IS NULL THEN 0.0 ELSE node.latency END AS latency_node "              // latency
+                + "WITH path, "
+                + "min(rps_node) AS rps, "                                      // минимальный rps
+                + "apoc.agg.product(1 - error_rate_node) AS error_rate, "       // произведение обратного значения ошибок
+                + "sum(latency_node) AS latency "                               // сумма задержек на пути
+                + "RETURN path, rps, error_rate, latency";
 
         return neo4jSessionManager.getSession().run(query);
     }

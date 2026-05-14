@@ -78,7 +78,7 @@ export default function HomePage() {
   const [visViewMode, setVisViewMode] = useState<'json' | 'graph'>('graph');
 
   // Доп. метрики для pathCapacity
-  const [pathMetrics, setPathMetrics] = useState<{ error_rate?: number; throughput?: number } | null>(null);
+  const [pathMetrics, setPathMetrics] = useState<{ rps?: number; error_rate?: number; latency?: number } | null>(null);
 
   const clearMessages = () => {
     setResult(null);
@@ -136,8 +136,9 @@ export default function HomePage() {
       const parsed = JSON.parse(result);
       if (analysisType === 'pathcapacity') {
         setPathMetrics({
+          rps: parsed.rps,
           error_rate: parsed.error_rate,
-          throughput: parsed.throughput,
+          latency: parsed.latency,
         });
       } else {
         setPathMetrics(null);
@@ -326,11 +327,14 @@ export default function HomePage() {
         {/* Метрики для pathCapacity */}
         {analysisType === 'pathcapacity' && pathMetrics && (
           <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded text-sm">
-            {pathMetrics.error_rate !== undefined && (
-              <div><strong>Error rate:</strong> {pathMetrics.error_rate}</div>
+            {pathMetrics.rps !== undefined && (
+              <div><strong>Minimal RPS:</strong> {pathMetrics.rps}</div>
             )}
-            {pathMetrics.throughput !== undefined && (
-              <div><strong>Throughput:</strong> {pathMetrics.throughput}</div>
+            {pathMetrics.error_rate !== undefined && (
+              <div><strong>Total error rate:</strong> {pathMetrics.error_rate}</div>
+            )}
+            {pathMetrics.latency !== undefined && (
+              <div><strong>Sum of latency:</strong> {pathMetrics.latency}</div>
             )}
           </div>
         )}

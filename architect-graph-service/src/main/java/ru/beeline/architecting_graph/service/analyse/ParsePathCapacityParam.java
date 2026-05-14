@@ -1,13 +1,10 @@
 package ru.beeline.architecting_graph.service.analyse;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Collections;
 import java.util.stream.Collectors;
 
 import org.neo4j.driver.Result;
-import org.neo4j.driver.Record;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -61,61 +58,26 @@ public class ParsePathCapacityParam {
         return res;
     }
 
-    public List<List<String>> getPermutations(List<String> list) {
-        List<List<String>> result = new ArrayList<>();
-        int n = list.size();
-        int[] c = new int[n];
-        result.add(new ArrayList<>(list));
-        int i = 0;
-        while (i < n) {
-            if (c[i] < i) {
-                Collections.swap(list, i % 2 == 0 ? 0 : c[i], i);
-                result.add(new ArrayList<>(list));
-                c[i]++;
-                i = 0;
-            } else {
-                c[i] = 0;
-                i++;
-            }
-        }
-        return result;
-    }
-
     public String parseNodeIdentifiers(String nodeIdentifiers, String nodeTypes, String relTypes) {
         if (empty(nodeIdentifiers)) {
             return "";
         }
 
-        int minPath = (int) 1e9;
-        String ans = "";
-
         String[] identifiers = nodeIdentifiers.split(",");
         List<String> listIdentifiers = Arrays.stream(identifiers).map(String::trim).collect(Collectors.toList());
-        List<List<String>> pathPermutations = getPermutations(listIdentifiers);
-        for (List<String> path : pathPermutations) {
 
-            String  res = "[";
+        String  res = "[";
+        for (String identifier : listIdentifiers) {
+            res = res + "\"" + identifier + "\", ";
+        }
+        res = res.substring(0, res.length() - 2);
+        res = res + "] ";
+        Result result = analyseRepository.getPathSize(nodeTypes, relTypes, res);
 
-            for (String identifier : path) {
-                res = res + "\"" + identifier + "\", ";
-            }
-
-            res = res.substring(0, res.length() - 2);
-    
-            res = res + "] ";
-
-            Result result = analyseRepository.getPathSize(nodeTypes, relTypes, res);
-
-            if (result.hasNext()) {
-                Record record = result.next();
-                int pathLength = record.get("pathLength").asInt();
-                if(pathLength < minPath) {
-                    minPath = pathLength;
-                    ans = res;
-                }
-            }
+        if (result.hasNext()) {
+            return res;
         }
 
-        return ans;
+        return "";
     }
 }
