@@ -57,7 +57,7 @@ public class AnalyseController {
     }
 
     @GetMapping("/pathcapacity")
-    @Operation(summary = "Пропускная способность сети")
+    @Operation(summary = "Пропускная способность пути")
     // связи учитываются как направленные
     public ResponseEntity<String> findPathCapacity(
             @RequestParam(required = false) String nodeTypes,
