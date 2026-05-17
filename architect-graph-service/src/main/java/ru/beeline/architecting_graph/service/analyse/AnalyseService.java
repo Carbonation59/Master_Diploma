@@ -4,9 +4,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.neo4j.driver.Result;
 import org.neo4j.driver.Record;
@@ -60,39 +62,73 @@ public class AnalyseService {
             nodeIdentifiers = parseCycleParams.parseNodeIdentifiers(nodeIdentifiers);
 
             Result result = analyseRepository.findCycles(graphTag, nodeTypes, relTypes, nodeIdentifiers);
-            Map<String, Object> graph = new HashMap<>();
-            Set<Map<String, Object>> nodes = new HashSet<>();
-            Set<Map<String, Object>> edges = new HashSet<>();
+
+            Map<String, Map<String, Object>> uniqueCycles = new LinkedHashMap<>();
 
             while (result.hasNext()) {
                 Record record = result.next();
                 Path path = record.get("path").asPath();
 
-                // Добавляем узлы
+                List<Long> nodeIds = new ArrayList<>();
                 for (Node node : path.nodes()) {
-                    Map<String, Object> nodeMap = new HashMap<>();
-                    nodeMap.put("id", node.id());
-                    nodeMap.put("label", node.labels().iterator().next());
-                    nodeMap.put("properties", node.asMap());
-                    nodes.add(nodeMap);
+                    nodeIds.add(node.id());
                 }
 
-                // Добавляем связи
-                for (Relationship rel : path.relationships()) {
-                    Map<String, Object> edgeMap = new HashMap<>();
-                    edgeMap.put("id", rel.id());
-                    edgeMap.put("from", rel.startNodeId());
-                    edgeMap.put("to", rel.endNodeId());
-                    edgeMap.put("label", rel.type());
-                    edgeMap.put("properties", rel.asMap());
-                    edges.add(edgeMap);
+                if (nodeIds.size() >= 2 && nodeIds.get(0).equals(nodeIds.get(nodeIds.size() - 1))) {
+                    nodeIds.remove(nodeIds.size() - 1);
                 }
+
+                List<Long> sortedIds = new ArrayList<>(nodeIds);
+                Collections.sort(sortedIds);
+                String key = sortedIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+
+                if (uniqueCycles.containsKey(key)) {
+                    continue;
+                }
+
+                List<Map<String, Object>> pathNodes = new ArrayList<>();
+                Map<Long, String> idToName = new HashMap<>();
+                for (Node node : path.nodes()) {
+                    Map<String, Object> nodeMap = new LinkedHashMap<>();
+                    nodeMap.put("id", node.id());
+                    String label = node.labels().iterator().next();
+                    nodeMap.put("label", label);
+                    Map<String, Object> props = node.asMap();
+                    nodeMap.put("properties", props);
+                    pathNodes.add(nodeMap);
+                    // Сохраняем имя для связей
+                    idToName.put(node.id(), (String) props.getOrDefault("name", "null"));
+                }
+
+                List<Map<String, Object>> relationships = new ArrayList<>();
+                for (Relationship rel : path.relationships()) {
+                    Map<String, Object> relMap = new LinkedHashMap<>();
+                    relMap.put("from", rel.startNodeId());
+                    relMap.put("to", rel.endNodeId());
+                    relMap.put("type", rel.type());
+                    relMap.put("properties", rel.asMap());
+                    relMap.put("fromName", idToName.getOrDefault(rel.startNodeId(), "null"));
+                    relMap.put("toName", idToName.getOrDefault(rel.endNodeId(), "null"));
+                    relationships.add(relMap);
+                }
+
+                Map<String, Object> cycleEntry = new LinkedHashMap<>();
+                cycleEntry.put("id", uniqueCycles.size() + 1);
+                cycleEntry.put("path", pathNodes);
+                cycleEntry.put("relationships", relationships);
+
+                uniqueCycles.put(key, cycleEntry);
             }
 
-            graph.put("nodes", nodes);
-            graph.put("edges", edges);
+            List<Map<String, Object>> cyclesList = new ArrayList<>(uniqueCycles.values());
 
-            String jsonResponse = objectMapper.writeValueAsString(graph);
+            Map<String, Object> responseMap = new LinkedHashMap<>();
+            responseMap.put("analysisType", "cycles");
+            responseMap.put("description",
+                "Обнаружены циклические зависимости, которые могут усложнять тестирование, сборку и повторное использование компонентов.");
+            responseMap.put("cycles", cyclesList);
+
+            String jsonResponse = objectMapper.writeValueAsString(responseMap);
             return ResponseEntity.ok()
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(jsonResponse);
@@ -143,8 +179,7 @@ public class AnalyseService {
         }
     }
 
-    public ResponseEntity<String> findGodElements(String graphTag, String nodeTypes, String relTypes,
-            String nodeIdentifiers) {
+    public ResponseEntity<String> findGodElements(String graphTag, String nodeTypes, String relTypes,String nodeIdentifiers) {
 
         try {
             graphTag = parseGodElementParam.parseGraphTag(graphTag);
@@ -154,33 +189,40 @@ public class AnalyseService {
 
             Result result = analyseRepository.findGodElements(graphTag, nodeTypes, relTypes, nodeIdentifiers);
 
-            Map<String, Object> graph = new HashMap<>();
-            Set<Map<String, Object>> nodes = new HashSet<>();
+            List<Map<String, Object>> nodes = new ArrayList<>();
+
+            
+            double averageDegree = 0;
 
             while (result.hasNext()) {
                 Record record = result.next();
+                if(averageDegree == 0) {
+                    averageDegree = record.get("avgDegree").asDouble();
+                }
                 Node node = record.get("component").asNode();
+                long totalDegree = record.get("totalDegree").asLong();
 
-                Map<String, Object> nodeMap = new HashMap<>();
-
+                Map<String, Object> nodeMap = new LinkedHashMap<>();
                 nodeMap.put("id", node.id());
                 nodeMap.put("label", node.labels().iterator().next());
                 nodeMap.put("properties", node.asMap());
-
+                nodeMap.put("totalDegree", totalDegree);
                 nodes.add(nodeMap);
             }
 
-            graph.put("nodes", nodes);
+            Map<String, Object> responseMap = new LinkedHashMap<>();
+            responseMap.put("nodes", nodes);
+            responseMap.put("averageDegree", averageDegree);
 
-            String jsonResponse = objectMapper.writeValueAsString(graph);
+            String jsonResponse = objectMapper.writeValueAsString(responseMap);
             return ResponseEntity.ok()
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(jsonResponse);
 
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error: " + e.getMessage());
-        }
+            } catch (Exception e) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body("Error: " + e.getMessage());
+            }
     }
 
     public ResponseEntity<String> findPathCapacity(String nodeTypes, String relTypes, String nodeIdentifiers) {

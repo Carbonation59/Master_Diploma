@@ -58,18 +58,18 @@ public class AnalyseRepository {
         String query = "WITH randomUUID() AS graphName CALL gds.graph.project(graphName, " + nodeTypes + relTypes
                 + "YIELD graphName AS projName CALL gds.degree.stream(projName, {orientation: 'UNDIRECTED'}) "
                 + "YIELD nodeId, score AS totalDegree "
-                + "WITH projName, collect({nodeId: nodeId, totalDegree: totalDegree}) AS nodes "
-                + "WITH projName, nodes, apoc.coll.sort([n IN nodes | n.totalDegree]) AS sortedDegrees "
-                + "WITH projName, nodes, sortedDegrees, size(nodes) AS totalNodes "
-                + "WITH projName, nodes, "
+                + "WITH projName, collect({nodeId: nodeId, totalDegree: totalDegree}) AS nodes, avg(totalDegree) AS avgDegree "
+                + "WITH projName, nodes, avgDegree, apoc.coll.sort([n IN nodes | n.totalDegree]) AS sortedDegrees "
+                + "WITH projName, nodes, avgDegree, sortedDegrees, size(nodes) AS totalNodes "
+                + "WITH projName, nodes, avgDegree, "
                 + "sortedDegrees[toInteger(ceil(" + percentile + " * totalNodes)) - 1] AS threshold "
-                + "WITH projName, [n IN nodes WHERE n.totalDegree >= threshold] AS filteredNodes "
+                + "WITH projName, avgDegree, [n IN nodes WHERE n.totalDegree >= threshold] AS filteredNodes "
                 + "UNWIND filteredNodes AS node "
-                + "WITH projName, gds.util.asNode(node.nodeId) AS componentNode, node.totalDegree AS totalDegree "
+                + "WITH projName, avgDegree, gds.util.asNode(node.nodeId) AS componentNode, node.totalDegree AS totalDegree "
                 + graphTag + nodeIdentifiers
-                + "WITH projName, collect({componentNode: componentNode, totalDegree: totalDegree}) AS result "
+                + "WITH projName, avgDegree, collect({componentNode: componentNode, totalDegree: totalDegree}) AS result "
                 + "CALL gds.graph.drop(projName) YIELD graphName AS dropped " + "UNWIND result AS row "
-                + "RETURN row.componentNode AS component, row.totalDegree AS totalDegree";
+                + "RETURN avgDegree, row.componentNode AS component, row.totalDegree AS totalDegree";
 
         return neo4jSessionManager.getSession().run(query);
     }
@@ -115,7 +115,5 @@ public class AnalyseRepository {
 
         return neo4jSessionManager.getSession().run(query);
     }
-
-    // добавить генерацию отчёта
 
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
@@ -77,14 +77,10 @@ export default function HomePage() {
   const [viewMode, setViewMode] = useState<'json' | 'graph'>('json');
   const [visViewMode, setVisViewMode] = useState<'json' | 'graph'>('graph');
 
-  // Доп. метрики для pathCapacity
-  const [pathMetrics, setPathMetrics] = useState<{ rps?: number; error_rate?: number; latency?: number } | null>(null);
-
   const clearMessages = () => {
     setResult(null);
     setError(null);
     setViewMode('json');
-    setPathMetrics(null);
   };
 
   const loadVisualization = useCallback(async () => {
@@ -134,15 +130,6 @@ export default function HomePage() {
     if (!result) return null;
     try {
       const parsed = JSON.parse(result);
-      if (analysisType === 'pathcapacity') {
-        setPathMetrics({
-          rps: parsed.rps,
-          error_rate: parsed.error_rate,
-          latency: parsed.latency,
-        });
-      } else {
-        setPathMetrics(null);
-      }
       return parseGraphData(parsed);
     } catch {
       return null;
@@ -309,6 +296,682 @@ export default function HomePage() {
       </div>
     );
     if (!result) return null;
+  
+    // Специальный отчёт для циклических зависимостей
+    if (analysisType === 'cycles') {
+      try {
+        const data = JSON.parse(result);
+        const cycles = data.cycles;
+        if (!cycles || cycles.length === 0) {
+          return (
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded text-green-800">
+              <p className="font-medium">Циклические зависимости не обнаружены.</p>
+              <p className="text-sm mt-1">Архитектура не содержит циклов на анализируемых вершинах и связях.</p>
+            </div>
+          );
+        }
+  
+        return (
+          <div className="mt-4">
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+              <h3 className="font-semibold text-lg mb-1">Обнаружены циклические зависимости</h3>
+              <p className="text-sm text-gray-700">
+                Циклические зависимости между элементами архитектуры могут приводить к проблемам:
+                усложнению тестирования, невозможности независимого развёртывания, 
+                снижению гибкости при замене компонентов. Рекомендуется разорвать циклы, 
+                введя дополнительные абстракции или инвертировав зависимости.
+              </p>
+            </div>
+  
+            {cycles.map((cycle: any, idx: number) => {
+              const path = cycle.path;
+              if (!path || path.length < 2) return null;
+
+              return (
+                <div key={idx} className="mb-4 p-3 bg-white border border-gray-200 rounded shadow-sm">
+                  <h4 className="font-medium mb-2">Цикл #{idx + 1}</h4>
+                  <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm bg-gray-50 p-2 rounded">
+                    {path.map((node: any, nodeIdx: number) => {
+                      const name = node.properties?.name || node.name || '?';
+                      const type = node.label || node.type || '?';
+                      const color = nodeColorMap[type] || defaultColor;
+                      return (
+                        <React.Fragment key={nodeIdx}>
+                          {nodeIdx > 0 && <span className="text-gray-500 mx-1">→</span>}
+                          <span className="font-medium">{name}</span>
+                          <span
+                            className="inline-block px-2 py-0.5 rounded text-xs font-medium text-white"
+                            style={{ backgroundColor: color }}
+                          >
+                            {type}
+                          </span>
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                  {cycle.relationships && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-sm text-blue-600">Задействованные связи</summary>
+                      <ul className="mt-1 text-sm list-disc list-inside">
+                        {cycle.relationships.map((rel: any, relIdx: number) => (
+                          <li key={relIdx}>
+                            {rel.fromName || rel.from} → {rel.toName || rel.to} ({rel.type || 'RELATED'})
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      } catch {
+        return (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700">
+            Ошибка при обработке результата анализа.
+          </div>
+        );
+      }
+    }
+
+    // Специальный отчёт для единых точек отказа
+    if (analysisType === 'singlepoints') {
+      try {
+        const data = JSON.parse(result);
+        // Поддержка двух возможных форматов: { nodes: [...] } или { singlePoints: [...] }
+        const points = data.singlePoints || data.nodes || [];
+        if (!points || points.length === 0) {
+          return (
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded text-green-800">
+              <p className="font-medium">Единые точки отказа не обнаружены.</p>
+              <p className="text-sm mt-1">
+                В анализируемой архитектуре нет узлов, удаление которых разъединило бы граф на несвязные части.
+              </p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="mt-4">
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+              <h3 className="font-semibold text-lg mb-1">Обнаружены единые точки отказа</h3>
+              <p className="text-sm text-gray-700">
+                Единая точка отказа (Single Point of Failure) – это узел, выход из строя которого
+                приводит к нарушению связности всей системы или её критической части. Такие узлы
+                снижают отказоустойчивость и должны быть устранены путём введения дублирования
+                или перестроения архитектуры.
+              </p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white border border-gray-200 rounded">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">#</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Имя</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Тип</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Принадлежность</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Идентификатор</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {points.map((node: any, idx: number) => {
+                    const name = node.properties?.name || node.name || '?';
+                    const type = node.label || node.type || '?';
+                    const graphTag = node.properties?.graphTag || node.graphTag || 'не указана';
+                    const dslId = node.properties?.structurizr_dsl_identifier || '';
+                    return (
+                      <tr key={node.id || idx} className="border-t border-gray-200 hover:bg-gray-50">
+                        <td className="px-4 py-2 text-sm">{idx + 1}</td>
+                        <td className="px-4 py-2 text-sm font-medium">{name}</td>
+                        <td className="px-4 py-2 text-sm">
+                          <span
+                            className="inline-block px-2 py-0.5 rounded text-xs font-medium"
+                            style={{ backgroundColor: nodeColorMap[type] || defaultColor, color: '#fff' }}
+                          >
+                            {type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-sm">{graphTag}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500">{dslId || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-gray-700">
+              <strong>Рекомендация:</strong> Для каждой обнаруженной точки отказа рассмотрите
+              возможность дублирования компонента, введения балансировщика нагрузки или
+              реорганизации зависимостей так, чтобы не существовало единственного узла,
+              соединяющего разные части системы.
+            </div>
+          </div>
+        );
+      } catch {
+        return (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700">
+            Ошибка при обработке результата анализа.
+          </div>
+        );
+      }
+    }
+
+    // Специальный отчёт для "божественных объектов"
+    if (analysisType === 'godelements') {
+      try {
+        const data = JSON.parse(result);
+        const nodes = data.nodes || [];
+        const averageDegree = data.averageDegree || 0;
+
+        if (!nodes || nodes.length === 0) {
+          return (
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded text-green-800">
+              <p className="font-medium">Божественные объекты не обнаружены.</p>
+              <p className="text-sm mt-1">
+                В архитектуре нет узлов с аномально высокой степенью связности.
+              </p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="mt-4">
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+              <h3 className="font-semibold text-lg mb-1">Обнаружены «божественные объекты»</h3>
+              <p className="text-sm text-gray-700">
+                «Божественный объект» (God Object) – это элемент, который имеет чрезмерно много связей
+                с другими частями системы. Такие узлы нарушают принцип единственной ответственности,
+                усложняют сопровождение и тестирование, становятся узким местом при изменениях.
+                Рекомендуется разделить их на более мелкие компоненты с чёткой ответственностью.
+              </p>
+            </div>
+
+            {averageDegree > 0 && (
+              <p className="text-sm text-gray-600 mb-3">
+                Среднее количество связей по всем узлам графа: <strong>{averageDegree.toFixed(1)}</strong>
+              </p>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white border border-gray-200 rounded">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">#</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Имя</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Тип</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Принадлежность</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Кол-во связей</th>
+                    {averageDegree > 0 && (
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Превышение среднего</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {nodes.map((node: any, idx: number) => {
+                    const name = node.properties?.name || node.name || '?';
+                    const type = node.label || node.type || '?';
+                    const graphTag = node.properties?.graphTag || node.graphTag || 'не указана';
+                    const degree = node.totalDegree || 0;
+                    const excess = averageDegree > 0 ? ((degree / averageDegree - 1) * 100).toFixed(0) : null;
+
+                    return (
+                      <tr key={node.id || idx} className="border-t border-gray-200 hover:bg-gray-50">
+                        <td className="px-4 py-2 text-sm">{idx + 1}</td>
+                        <td className="px-4 py-2 text-sm font-medium">{name}</td>
+                        <td className="px-4 py-2 text-sm">
+                          <span
+                            className="inline-block px-2 py-0.5 rounded text-xs font-medium text-white"
+                            style={{ backgroundColor: nodeColorMap[type] || defaultColor }}
+                          >
+                            {type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-sm">{graphTag}</td>
+                        <td className="px-4 py-2 text-sm font-semibold">{degree}</td>
+                        {averageDegree > 0 && (
+                          <td className="px-4 py-2 text-sm">
+                            {excess !== null ? (
+                              <span className={degree > averageDegree ? 'text-red-600' : 'text-green-600'}>
+                                {excess}%
+                              </span>
+                            ) : '—'}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-gray-700">
+              <strong>Рекомендация:</strong> Проведите декомпозицию узлов с высокой степенью связности.
+              Выделите подсистемы, примените паттерны «Фасад» или «Посредник» для уменьшения количества
+              прямых зависимостей.
+            </div>
+          </div>
+        );
+      } catch {
+        return (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700">
+            Ошибка при обработке результата анализа.
+          </div>
+        );
+      }
+    }
+
+    // Специальный отчёт для пропускной способности сети
+    if (analysisType === 'pathcapacity') {
+      try {
+        const data = JSON.parse(result);
+        const pathNodes: any[] = data.nodes || [];
+        const totalRps = data.rps;
+        const totalErrorRate = data.error_rate;
+        const totalLatency = data.latency;
+
+        if (pathNodes.length === 0) {
+          return (
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded text-green-800">
+              <p className="font-medium">Путь не найден или не указаны идентификаторы узлов.</p>
+            </div>
+          );
+        }
+
+        // Ключевые идентификаторы, заданные пользователем
+        const keyIds = nodeIdentifiers.split(',').map(id => id.trim()).filter(Boolean);
+
+        // Определяем экстремумы среди узлов пути
+        let minRpsNodeId: number | null = null;
+        let minRpsValue = Infinity;
+        let maxErrorNodeId: number | null = null;
+        let maxErrorValue = -Infinity;
+        let maxLatencyNodeId: number | null = null;
+        let maxLatencyValue = -Infinity;
+
+        pathNodes.forEach((node: any) => {
+          const rps = node.properties?.rps;
+          const errorRate = node.properties?.error_rate;
+          const latency = node.properties?.latency;
+
+          if (rps !== undefined && rps < minRpsValue) {
+            minRpsValue = rps;
+            minRpsNodeId = node.id;
+          }
+          if (errorRate !== undefined && errorRate > maxErrorValue) {
+            maxErrorValue = errorRate;
+            maxErrorNodeId = node.id;
+          }
+          if (latency !== undefined && latency > maxLatencyValue) {
+            maxLatencyValue = latency;
+            maxLatencyNodeId = node.id;
+          }
+        });
+
+        return (
+          <div className="mt-4">
+            {/* Описание проверки */}
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+              <h3 className="font-semibold text-lg mb-1">Анализ пропускной способности пути</h3>
+              <p className="text-sm text-gray-700">
+                Данный анализ показывает путь между заданными компонентами и вычисляет совокупные
+                характеристики производительности: минимальную пропускную способность (RPS),
+                общую вероятность ошибки и суммарную задержку. Это помогает выявить узкие места,
+                которые ограничивают скорость, надёжность или время отклика цепочки взаимодействий.
+              </p>
+            </div>
+
+            {/* Сводка итоговых метрик */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded">
+                <div className="text-sm text-gray-500">Минимальный RPS</div>
+                <div className="text-xl font-bold">{totalRps}</div>
+              </div>
+              <div className="p-3 bg-red-50 border border-red-200 rounded">
+                <div className="text-sm text-gray-500">Общий error_rate</div>
+                <div className="text-xl font-bold">{(totalErrorRate * 100).toFixed(2)}%</div>
+              </div>
+              <div className="p-3 bg-purple-50 border border-purple-200 rounded">
+                <div className="text-sm text-gray-500">Суммарная задержка</div>
+                <div className="text-xl font-bold">{totalLatency?.toFixed(2)} мс</div>
+              </div>
+            </div>
+
+            {/* Цепочка узлов пути */}
+            <h4 className="font-medium mb-2">Путь взаимодействия</h4>
+            <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm bg-gray-50 p-3 rounded mb-4">
+              {pathNodes.map((node: any, nodeIdx: number) => {
+                const name = node.properties?.name || node.name || '?';
+                const type = node.label || node.type || '?';
+                const color = nodeColorMap[type] || defaultColor;
+                const dslId = node.properties?.structurizr_dsl_identifier || '';
+                const isKey = keyIds.includes(dslId);
+                const isMinRps = node.id === minRpsNodeId;
+                const isMaxError = node.id === maxErrorNodeId;
+                const isMaxLatency = node.id === maxLatencyNodeId;
+
+                const badges: string[] = [];
+                if (isMinRps) badges.push('🔻 мин. RPS');
+                if (isMaxError) badges.push('⚠️ макс. ошибка');
+                if (isMaxLatency) badges.push('🐌 макс. задержка');
+
+                return (
+                  <React.Fragment key={nodeIdx}>
+                    {nodeIdx > 0 && <span className="text-gray-500 mx-1">→</span>}
+                    <span
+                      className={`inline-flex items-center gap-1 rounded p-1 ${
+                        isKey ? 'bg-yellow-100 ring-2 ring-yellow-400' : ''
+                      }`}
+                    >
+                      <span className="font-medium">{name}</span>
+                      <span
+                        className="inline-block px-2 py-0.5 rounded text-xs font-medium text-white"
+                        style={{ backgroundColor: color }}
+                      >
+                        {type}
+                      </span>
+                      {badges.length > 0 && (
+                        <span className="text-xs text-gray-600 ml-1">{badges.join(', ')}</span>
+                      )}
+                    </span>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+
+            {/* Рекомендации */}
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded text-sm text-gray-700">
+              <strong>Рекомендации:</strong>
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                {minRpsNodeId && (
+                  <li>
+                    Узел с минимальной пропускной способностью (RPS = {minRpsValue}) ограничивает весь путь.
+                    Рассмотрите масштабирование или оптимизацию этого компонента.
+                  </li>
+                )}
+                {maxErrorNodeId && (
+                  <li>
+                    Узел с наибольшей вероятностью ошибки (error_rate = {(maxErrorValue * 100).toFixed(0)}%)
+                    вносит основной вклад в ненадёжность цепочки. Повысьте его отказоустойчивость
+                    или добавьте механизмы повторных попыток.
+                  </li>
+                )}
+                {maxLatencyNodeId && (
+                  <li>
+                    Узел с наибольшей задержкой (latency = {maxLatencyValue} мс) увеличивает общее время отклика.
+                    Оптимизируйте его производительность или примените кэширование.
+                  </li>
+                )}
+                {keyIds.length > 0 && (
+                  <li>
+                    Проверьте выделенные ключевые узлы (жёлтая рамка) на соответствие нефункциональным требованиям.
+                  </li>
+                )}
+                <li>
+                  Для общего повышения пропускной способности пути стремитесь сбалансировать RPS и задержки,
+                  а также уменьшить вероятности ошибок на каждом шаге.
+                </li>
+              </ul>
+            </div>
+          </div>
+        );
+      } catch {
+        return (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700">
+            Ошибка при обработке результата анализа.
+          </div>
+        );
+      }
+    }
+
+    // Специальный отчёт для критической инфраструктуры (общие узлы развёртывания)
+    if (analysisType === 'criticalinfrastructure') {
+      try {
+        const data = JSON.parse(result);
+        const nodes = data.nodes || [];
+        const systemIds = nodeIdentifiers
+          .split(',')
+          .map(id => id.trim())
+          .filter(Boolean);
+
+        if (!nodes || nodes.length === 0) {
+          return (
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded text-green-800">
+              <p className="font-medium">Общие критические узлы развёртывания не обнаружены.</p>
+              <p className="text-sm mt-1">
+                Системы, перечисленные в идентификаторах, не имеют общих узлов развёртывания.
+              </p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="mt-4">
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+              <h3 className="font-semibold text-lg mb-1">
+                Обнаружена критическая инфраструктура (общие узлы развёртывания)
+              </h3>
+              <p className="text-sm text-gray-700">
+                Обнаружены узлы развёртывания, на которых размещены компоненты нескольких
+                различных систем. Отказ такого узла может одновременно нарушить работу
+                всех зависимых систем, создавая неприемлемый риск для всей инфраструктуры.
+                Это не классическая единая точка отказа на уровне логических зависимостей,
+                а риск совместного размещения, который необходимо контролировать.
+              </p>
+            </div>
+
+            {/* Информация о системах */}
+            {systemIds.length > 0 && (
+              <div className="mb-3 p-2 bg-gray-50 rounded text-sm text-gray-600">
+                Анализируются системы: <strong>{systemIds.join(', ')}</strong>
+              </div>
+            )}
+
+            {/* Таблица найденных узлов */}
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white border border-gray-200 rounded">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">#</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Имя</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Тип</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Принадлежность</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Идентификатор</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nodes.map((node: any, idx: number) => {
+                    const name = node.properties?.name || node.name || '?';
+                    const type = node.label || node.type || '?';
+                    const graphTag = node.properties?.graphTag || node.graphTag || 'не указана';
+                    const dslId = node.properties?.structurizr_dsl_identifier || '';
+                    return (
+                      <tr key={node.id || idx} className="border-t border-gray-200 hover:bg-gray-50">
+                        <td className="px-4 py-2 text-sm">{idx + 1}</td>
+                        <td className="px-4 py-2 text-sm font-medium">{name}</td>
+                        <td className="px-4 py-2 text-sm">
+                          <span
+                            className="inline-block px-2 py-0.5 rounded text-xs font-medium text-white"
+                            style={{
+                              backgroundColor: nodeColorMap[type] || defaultColor,
+                            }}
+                          >
+                            {type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-sm">{graphTag}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500">{dslId || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Рекомендации */}
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-gray-700">
+              <strong>Рекомендации:</strong>
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>
+                  Рассмотрите возможность размещения компонентов разных систем на
+                  независимых физических или виртуальных узлах, чтобы снизить эффект
+                  отказа общего инфраструктурного элемента.
+                </li>
+                <li>
+                  Если совместное размещение неизбежно, обеспечьте повышенную
+                  отказоустойчивость критического узла (кластеризация, резервирование,
+                  автоматическое переключение).
+                </li>
+                <li>
+                  Проведите стресс-тестирование и анализ влияния отказа каждого из
+                  перечисленных узлов на все зависимые системы.
+                </li>
+                <li>
+                  Задокументируйте данные узлы как критические точки совместного
+                  размещения и включите их в план аварийного восстановления.
+                </li>
+              </ul>
+            </div>
+          </div>
+        );
+      } catch {
+        return (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700">
+            Ошибка при обработке результата анализа.
+          </div>
+        );
+      }
+    }
+
+    // Специальный отчёт для контроля периметра (нарушение периметра развёртывания)
+    if (analysisType === 'perimeterviolation') {
+      try {
+        const data = JSON.parse(result);
+        const nodes = data.nodes || [];
+
+        // Свойства, которые должны присутствовать (заданы пользователем)
+        const requiredProps = properties
+          .split(',')
+          .map(p => p.trim())
+          .filter(Boolean);
+
+        if (!nodes || nodes.length === 0) {
+          return (
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded text-green-800">
+              <p className="font-medium">Нарушений периметра не обнаружено.</p>
+              <p className="text-sm mt-1">
+                Все компоненты, развёрнутые в указанной зоне {deploymentNodeIdentifier || ''},
+                соответствуют заданным технологическим требованиям.
+              </p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="mt-4">
+            {/* Описание антипаттерна */}
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+              <h3 className="font-semibold text-lg mb-1">
+                Обнаружено нарушение периметра развёртывания
+              </h3>
+              <p className="text-sm text-gray-700">
+                В сетевой зоне <strong>{deploymentNodeIdentifier || 'указанный узел'}</strong> найдены
+                компоненты, которые не обладают необходимыми технологиями (например, WAF).
+                Это означает, что трафик может проходить в обход защитных средств, создавая угрозу
+                безопасности. Все компоненты, развёрнутые в DMZ или иных контролируемых зонах,
+                должны взаимодействовать с внешними сетями только через заданные технологии защиты.
+              </p>
+            </div>
+
+            {/* Таблица найденных нарушителей */}
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white border border-gray-200 rounded">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">#</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Имя</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Тип</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Принадлежность</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Текущая технология</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Требуемые технологии</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nodes.map((node: any, idx: number) => {
+                    const name = node.properties?.name || node.name || '?';
+                    const type = node.label || node.type || '?';
+                    const graphTag = node.properties?.graphTag || node.graphTag || 'не указана';
+                    const currentTech = node.properties?.technology || 'не указана';
+                    const dslId = node.properties?.structurizr_dsl_identifier || '';
+
+                    return (
+                      <tr key={node.id || idx} className="border-t border-gray-200 hover:bg-gray-50">
+                        <td className="px-4 py-2 text-sm">{idx + 1}</td>
+                        <td className="px-4 py-2 text-sm font-medium">{name}</td>
+                        <td className="px-4 py-2 text-sm">
+                          <span
+                            className="inline-block px-2 py-0.5 rounded text-xs font-medium text-white"
+                            style={{
+                              backgroundColor: nodeColorMap[type] || defaultColor,
+                            }}
+                          >
+                            {type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-sm">{graphTag}</td>
+                        <td className="px-4 py-2 text-sm">
+                          {currentTech && currentTech !== 'не указана' ? (
+                            <span className="text-orange-600 font-medium">{currentTech}</span>
+                          ) : (
+                            <span className="text-red-600 italic">отсутствует</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-500">
+                          {requiredProps.length > 0 ? requiredProps.join(', ') : 'не заданы'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Рекомендации */}
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-gray-700">
+              <strong>Рекомендации:</strong>
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>
+                  Убедитесь, что все компоненты, развёрнутые в зоне{' '}
+                  <strong>{deploymentNodeIdentifier || 'указанной зоне'}</strong>, явно
+                  указывают требуемую технологию защиты (например, WAF).
+                </li>
+                <li>
+                  Проверьте, что сетевые взаимодействия проходят через контейнеры или
+                  экземпляры, реализующие необходимый стек безопасности.
+                </li>
+                <li>
+                  Для компонентов, у которых технология отсутствует, либо добавьте
+                  соответствующий атрибут, либо перенаправьте их трафик через
+                  доверенные узлы с нужной технологией.
+                </li>
+                <li>
+                  Регулярно проводите аудит периметра развёртывания на предмет
+                  появления новых непомеченных компонентов.
+                </li>
+              </ul>
+            </div>
+          </div>
+        );
+      } catch {
+        return (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700">
+            Ошибка при обработке результата анализа.
+          </div>
+        );
+      }
+    }
 
     return (
       <div className="mt-4">
@@ -323,21 +986,6 @@ export default function HomePage() {
             </button>
           )}
         </div>
-
-        {/* Метрики для pathCapacity */}
-        {analysisType === 'pathcapacity' && pathMetrics && (
-          <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded text-sm">
-            {pathMetrics.rps !== undefined && (
-              <div><strong>Minimal RPS:</strong> {pathMetrics.rps}</div>
-            )}
-            {pathMetrics.error_rate !== undefined && (
-              <div><strong>Total error rate:</strong> {pathMetrics.error_rate}</div>
-            )}
-            {pathMetrics.latency !== undefined && (
-              <div><strong>Sum of latency:</strong> {pathMetrics.latency}</div>
-            )}
-          </div>
-        )}
 
         {viewMode === 'json' || !analysisGraphData ? (
           <pre className="whitespace-pre-wrap text-sm p-3 bg-green-50 border border-green-200 rounded text-gray-800">
@@ -366,9 +1014,9 @@ export default function HomePage() {
 
   const getAnalysisTitle = () => {
     switch (analysisType) {
-      case 'cycles': return 'Поиск циклических зависимостей в архитектуре';
-      case 'singlepoints': return 'Поиск единых точек отказа в архитектуре';
-      case 'godelements': return 'Поиск "божественного объекта" в архитектуре';
+      case 'cycles': return 'Поиск циклических зависимостей';
+      case 'singlepoints': return 'Поиск единых точек отказа';
+      case 'godelements': return 'Поиск "божественного объекта"';
       case 'pathcapacity': return 'Пропускная способность сети';
       case 'criticalinfrastructure': return 'Поиск критической инфраструктуры (общих узлов развёртывания)';
       case 'perimeterviolation': return 'Контроль периметра (нарушение периметра развёртывания)';
@@ -415,9 +1063,9 @@ export default function HomePage() {
           {analysisOpen && (
             <div className="absolute left-0 mt-1 w-80 bg-white border rounded shadow-lg z-10">
               {[
-                { type: 'cycles', label: 'Поиск циклических зависимостей в архитектуре' },
-                { type: 'singlepoints', label: 'Поиск единых точек отказа в архитектуре' },
-                { type: 'godelements', label: 'Поиск "божественного объекта" в архитектуре' },
+                { type: 'cycles', label: 'Поиск циклических зависимостей' },
+                { type: 'singlepoints', label: 'Поиск единых точек отказа' },
+                { type: 'godelements', label: 'Поиск "божественного объекта"' },
                 { type: 'pathcapacity', label: 'Пропускная способность сети' },
                 { type: 'criticalinfrastructure', label: 'Поиск критической инфраструктуры (общих узлов развёртывания)' },
                 { type: 'perimeterviolation', label: 'Контроль периметра (нарушение периметра развёртывания)' },
