@@ -1,0 +1,205 @@
+MATCH (n) DETACH DELETE n;
+
+// ==========================================
+// Создание узлов
+// ==========================================
+
+// Container
+MERGE (c:Container {structurizr_dsl_identifier: 'C4'}) SET c.name = 'Cont4';
+MERGE (c:Container {structurizr_dsl_identifier: 'rnc'}) SET c.name = 'Cont3';
+MERGE (c:Container {structurizr_dsl_identifier: 'rnc_l'}) SET c.name = 'Cont1', c.graphTag = 'Local';
+MERGE (c:Container {structurizr_dsl_identifier: 'cont_1_sys1'}) SET c.grapgTag = 'Global', c.name = 'cont1_sys1';
+MERGE (c:Container {structurizr_dsl_identifier: 'cont_2_sys1'}) SET c.grapgTag = 'Global', c.name = 'cont2_sys1', c.technology = 'WAF';
+MERGE (c:Container {structurizr_dsl_identifier: 'cont_1_sys2'}) SET c.grapgTag = 'Global', c.name = 'cont1_sys2';
+MERGE (c:Container {structurizr_dsl_identifier: 'cont_2_sys2'}) SET c.grapgTag = 'Global', c.name = 'cont2_sys2', c.technology = 'WAF';
+MERGE (c:Container {structurizr_dsl_identifier: 'cont_1_sys3'}) SET c.grapgTag = 'Global', c.name = 'cont1_sys3', c.technology = 'WAF';
+MERGE (c:Container {structurizr_dsl_identifier: 'cont_2_sys3'}) SET c.grapgTag = 'Global', c.name = 'cont2_sys3', c.technology = 'SMM';
+
+// Element
+MERGE (e:Element {structurizr_dsl_identifier: 'el1'}) SET e.error_rate = 0.1, e.rps = 100, e.latency = 1, e.name = 'Elem1';
+MERGE (e:Element {structurizr_dsl_identifier: 'el2'}) SET e.error_rate = 0.12, e.rps = 120, e.latency = 1.2, e.name = 'Elem2';
+MERGE (e:Element {structurizr_dsl_identifier: 'el3'}) SET e.error_rate = 0.16, e.rps = 160, e.latency = 1.6, e.name = 'Elem3';
+MERGE (e:Element {structurizr_dsl_identifier: 'el4'}) SET e.error_rate = 0.2, e.rps = 200, e.latency = 2, e.name = 'Elem4';
+MERGE (e:Element {structurizr_dsl_identifier: 'el5'}) SET e.error_rate = 0.5, e.rps = 250, e.latency = 5, e.name = 'Elem5';
+MERGE (e:Element {structurizr_dsl_identifier: 'el6'}) SET e.error_rate = 0.6, e.rps = 300, e.latency = 10, e.name = 'Elem6';
+
+// Component
+MERGE (c:Component {structurizr_dsl_identifier: 'bm'}) SET c.name = 'Comp3';
+MERGE (c:Component {structurizr_dsl_identifier: 'bm_l'}) SET c.name = 'Comp1', c.graphTag = 'Local';
+MERGE (c:Component {structurizr_dsl_identifier: 'bm_g'}) SET c.name = 'Comp2', c.graphTag = 'GlobaL';
+MERGE (c:Component {structurizr_dsl_identifier: 'rnc_g'}) SET c.name = 'Cont2', c.graphTag = 'GlobaL';
+
+// Person
+MERGE (p:Person {name: 'Pers1', age: 35});
+MERGE (p:Person {name: 'Pers2', age: 43});
+MERGE (p:Person {name: 'Pers3', age: 21});
+
+// SoftwareSystem
+MERGE (s:SoftwareSystem {structurizr_dsl_identifier: 'sys_1'}) SET s.grapgTag = 'Global', s.name = 'sys1';
+MERGE (s:SoftwareSystem {structurizr_dsl_identifier: 'sys_2'}) SET s.grapgTag = 'Global', s.name = 'sys2';
+MERGE (s:SoftwareSystem {structurizr_dsl_identifier: 'sys_3'}) SET s.grapgTag = 'Global', s.name = 'sys3';
+
+// DeploymentNode
+MERGE (d:DeploymentNode {structurizr_dsl_identifier: 'depl1'}) SET d.grapgTag = 'Global', d.name = 'depl1';
+MERGE (d:DeploymentNode {structurizr_dsl_identifier: 'depl2'}) SET d.grapgTag = 'Global', d.name = 'depl2';
+MERGE (d:DeploymentNode {structurizr_dsl_identifier: 'depl3'}) SET d.grapgTag = 'Global', d.name = 'depl3';
+MERGE (d:DeploymentNode {structurizr_dsl_identifier: 'depl4'}) SET d.grapgTag = 'Global', d.name = 'depl4';
+MERGE (d:DeploymentNode {structurizr_dsl_identifier: 'depl5'}) SET d.grapgTag = 'Global', d.name = 'depl5';
+MERGE (d:DeploymentNode {structurizr_dsl_identifier: 'depl6'}) SET d.grapgTag = 'Global', d.name = 'depl6';
+
+// ContainerInstance
+MERGE (ci:ContainerInstance {structurizr_dsl_identifier: 'contIns_1'}) SET ci.grapgTag = 'Global', ci.name = 'ContIns1';
+MERGE (ci:ContainerInstance {structurizr_dsl_identifier: 'contIns_2'}) SET ci.grapgTag = 'Global', ci.name = 'ContIns2';
+MERGE (ci:ContainerInstance {structurizr_dsl_identifier: 'contIns_3'}) SET ci.grapgTag = 'Global', ci.name = 'ContIns3';
+MERGE (ci:ContainerInstance {structurizr_dsl_identifier: 'contIns_4'}) SET ci.grapgTag = 'Global', ci.name = 'ContIns4';
+MERGE (ci:ContainerInstance {structurizr_dsl_identifier: 'contIns_5'}) SET ci.grapgTag = 'Global', ci.name = 'ContIns5';
+MERGE (ci:ContainerInstance {structurizr_dsl_identifier: 'contIns_6'}) SET ci.grapgTag = 'Global', ci.name = 'ContIns6';
+
+// ==========================================
+// Создание связей
+// ==========================================
+
+// Person -> Person
+MATCH (a:Person {name: 'Pers2', age: 43}), (b:Person {name: 'Pers1', age: 35})
+MERGE (a)-[:CALLS]->(b);
+
+// Component -> Component / Component -> Container
+MATCH (a:Component {structurizr_dsl_identifier: 'bm_g'}), (b:Component {structurizr_dsl_identifier: 'bm'})
+MERGE (a)-[:CALLS]->(b);
+
+MATCH (a:Component {structurizr_dsl_identifier: 'bm_g'}), (b:Component {structurizr_dsl_identifier: 'bm_l'})
+MERGE (a)-[:FRIEND]->(b);
+
+MATCH (a:Component {structurizr_dsl_identifier: 'rnc_g'}), (b:Container {structurizr_dsl_identifier: 'rnc'})
+MERGE (a)-[:CALLS1]->(b);
+
+MATCH (a:Component {structurizr_dsl_identifier: 'bm_l'}), (b:Component {structurizr_dsl_identifier: 'rnc_g'})
+MERGE (a)-[:CALLS2]->(b);
+
+// Element -> Element
+MATCH (a:Element {structurizr_dsl_identifier: 'el1'}), (b:Element {structurizr_dsl_identifier: 'el2'})
+MERGE (a)-[:CALLS]->(b);
+
+MATCH (a:Element {structurizr_dsl_identifier: 'el2'}), (b:Element {structurizr_dsl_identifier: 'el3'})
+MERGE (a)-[:CALLS]->(b);
+
+MATCH (a:Element {structurizr_dsl_identifier: 'el3'}), (b:Element {structurizr_dsl_identifier: 'el4'})
+MERGE (a)-[:CALLS]->(b);
+
+MATCH (a:Element {structurizr_dsl_identifier: 'el4'}), (b:Element {structurizr_dsl_identifier: 'el5'})
+MERGE (a)-[:CALLS]->(b);
+
+MATCH (a:Element {structurizr_dsl_identifier: 'el6'}), (b:Element {structurizr_dsl_identifier: 'el3'})
+MERGE (a)-[:CALLS]->(b);
+
+MATCH (a:Element {structurizr_dsl_identifier: 'el5'}), (b:Element {structurizr_dsl_identifier: 'el1'})
+MERGE (a)-[:CALLS]->(b);
+
+// Element <-> Person
+MATCH (a:Element {structurizr_dsl_identifier: 'el2'}), (b:Person {name: 'Pers3', age: 21})
+MERGE (a)-[:CALLS1]->(b);
+
+MATCH (a:Person {name: 'Pers3', age: 21}), (b:Element {structurizr_dsl_identifier: 'el6'})
+MERGE (a)-[:CALLS1]->(b);
+
+// Container / Person / Component
+MATCH (a:Container {structurizr_dsl_identifier: 'rnc_l'}), (b:Person {name: 'Pers2', age: 43})
+MERGE (a)-[:CALLS]->(b);
+
+MATCH (a:Person {name: 'Pers1', age: 35}), (b:Container {structurizr_dsl_identifier: 'rnc_l'})
+MERGE (a)-[:CALL1]->(b);
+
+MATCH (a:Container {structurizr_dsl_identifier: 'rnc_l'}), (b:Component {structurizr_dsl_identifier: 'bm_l'})
+MERGE (a)-[:CALLS]->(b);
+
+MATCH (a:Component {structurizr_dsl_identifier: 'bm_l'}), (b:Container {structurizr_dsl_identifier: 'rnc_l'})
+MERGE (a)-[:CALLS]->(b);
+
+MATCH (a:Container {structurizr_dsl_identifier: 'rnc'}), (b:Component {structurizr_dsl_identifier: 'bm_l'})
+MERGE (a)-[:CALLS2]->(b);
+
+// SoftwareSystem -> Container
+MATCH (a:SoftwareSystem {structurizr_dsl_identifier: 'sys_1'}), (b:Container {structurizr_dsl_identifier: 'cont_1_sys1'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:SoftwareSystem {structurizr_dsl_identifier: 'sys_1'}), (b:Container {structurizr_dsl_identifier: 'cont_2_sys1'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:SoftwareSystem {structurizr_dsl_identifier: 'sys_2'}), (b:Container {structurizr_dsl_identifier: 'cont_1_sys2'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:SoftwareSystem {structurizr_dsl_identifier: 'sys_2'}), (b:Container {structurizr_dsl_identifier: 'cont_2_sys2'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:SoftwareSystem {structurizr_dsl_identifier: 'sys_3'}), (b:Container {structurizr_dsl_identifier: 'cont_2_sys3'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:SoftwareSystem {structurizr_dsl_identifier: 'sys_3'}), (b:Container {structurizr_dsl_identifier: 'cont_1_sys3'})
+MERGE (a)-[:Child]->(b);
+
+// SoftwareSystem -> DeploymentNode
+MATCH (a:SoftwareSystem {structurizr_dsl_identifier: 'sys_1'}), (b:DeploymentNode {structurizr_dsl_identifier: 'depl1'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:SoftwareSystem {structurizr_dsl_identifier: 'sys_2'}), (b:DeploymentNode {structurizr_dsl_identifier: 'depl2'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:SoftwareSystem {structurizr_dsl_identifier: 'sys_3'}), (b:DeploymentNode {structurizr_dsl_identifier: 'depl3'})
+MERGE (a)-[:Child]->(b);
+
+// DeploymentNode -> DeploymentNode
+MATCH (a:DeploymentNode {structurizr_dsl_identifier: 'depl1'}), (b:DeploymentNode {structurizr_dsl_identifier: 'depl4'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:DeploymentNode {structurizr_dsl_identifier: 'depl2'}), (b:DeploymentNode {structurizr_dsl_identifier: 'depl4'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:DeploymentNode {structurizr_dsl_identifier: 'depl2'}), (b:DeploymentNode {structurizr_dsl_identifier: 'depl5'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:DeploymentNode {structurizr_dsl_identifier: 'depl3'}), (b:DeploymentNode {structurizr_dsl_identifier: 'depl5'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:DeploymentNode {structurizr_dsl_identifier: 'depl4'}), (b:DeploymentNode {structurizr_dsl_identifier: 'depl6'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:DeploymentNode {structurizr_dsl_identifier: 'depl5'}), (b:DeploymentNode {structurizr_dsl_identifier: 'depl6'})
+MERGE (a)-[:Child]->(b);
+
+// DeploymentNode -> ContainerInstance
+MATCH (a:DeploymentNode {structurizr_dsl_identifier: 'depl4'}), (b:ContainerInstance {structurizr_dsl_identifier: 'contIns_1'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:DeploymentNode {structurizr_dsl_identifier: 'depl4'}), (b:ContainerInstance {structurizr_dsl_identifier: 'contIns_2'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:DeploymentNode {structurizr_dsl_identifier: 'depl5'}), (b:ContainerInstance {structurizr_dsl_identifier: 'contIns_3'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:DeploymentNode {structurizr_dsl_identifier: 'depl5'}), (b:ContainerInstance {structurizr_dsl_identifier: 'contIns_4'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:DeploymentNode {structurizr_dsl_identifier: 'depl6'}), (b:ContainerInstance {structurizr_dsl_identifier: 'contIns_5'})
+MERGE (a)-[:Child]->(b);
+
+MATCH (a:DeploymentNode {structurizr_dsl_identifier: 'depl6'}), (b:ContainerInstance {structurizr_dsl_identifier: 'contIns_6'})
+MERGE (a)-[:Child]->(b);
+
+// Container -> ContainerInstance (Deploy)
+MATCH (a:Container {structurizr_dsl_identifier: 'cont_1_sys1'}), (b:ContainerInstance {structurizr_dsl_identifier: 'contIns_1'})
+MERGE (a)-[:Deploy]->(b);
+
+MATCH (a:Container {structurizr_dsl_identifier: 'cont_1_sys2'}), (b:ContainerInstance {structurizr_dsl_identifier: 'contIns_2'})
+MERGE (a)-[:Deploy]->(b);
+
+MATCH (a:Container {structurizr_dsl_identifier: 'cont_2_sys2'}), (b:ContainerInstance {structurizr_dsl_identifier: 'contIns_3'})
+MERGE (a)-[:Deploy]->(b);
+
+MATCH (a:Container {structurizr_dsl_identifier: 'cont_1_sys3'}), (b:ContainerInstance {structurizr_dsl_identifier: 'contIns_4'})
+MERGE (a)-[:Deploy]->(b);
+
+MATCH (a:Container {structurizr_dsl_identifier: 'cont_2_sys3'}), (b:ContainerInstance {structurizr_dsl_identifier: 'contIns_5'})
+MERGE (a)-[:Deploy]->(b);
+
+MATCH (a:Container {structurizr_dsl_identifier: 'cont_2_sys1'}), (b:ContainerInstance {structurizr_dsl_identifier: 'contIns_6'})
+MERGE (a)-[:Deploy]->(b);

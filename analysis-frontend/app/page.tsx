@@ -193,14 +193,7 @@ export default function HomePage() {
         const errText = await res.text();
         throw new Error(`Ошибка ${res.status}: ${errText}`);
       }
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const data = await res.json();
-        setResult(JSON.stringify(data, null, 2));
-      } else {
-        const plainText = await res.text();
-        setResult(plainText);
-      }
+      setResult('Локальный граф успешно удалён');
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -224,14 +217,7 @@ export default function HomePage() {
         const errText = await res.text();
         throw new Error(`Ошибка ${res.status}: ${errText}`);
       }
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const data = await res.json();
-        setResult(JSON.stringify(data, null, 2));
-      } else {
-        const plainText = await res.text();
-        setResult(plainText);
-      }
+      setResult('Глобальный граф успешно удалён');
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -631,7 +617,7 @@ export default function HomePage() {
               </div>
               <div className="p-3 bg-red-50 border border-red-200 rounded">
                 <div className="text-sm text-gray-500">Общий error_rate</div>
-                <div className="text-xl font-bold">{(totalErrorRate * 100).toFixed(2)}%</div>
+                <div className="text-xl font-bold">{(100 - totalErrorRate * 100).toFixed(2)}%</div>
               </div>
               <div className="p-3 bg-purple-50 border border-purple-200 rounded">
                 <div className="text-sm text-gray-500">Суммарная задержка</div>
@@ -693,7 +679,7 @@ export default function HomePage() {
                 )}
                 {maxErrorNodeId && (
                   <li>
-                    Узел с наибольшей вероятностью ошибки (error_rate = {(maxErrorValue * 100).toFixed(0)}%)
+                    Узел с наибольшей вероятностью ошибки (error_rate = {maxErrorValue})
                     вносит основной вклад в ненадёжность цепочки. Повысьте его отказоустойчивость
                     или добавьте механизмы повторных попыток.
                   </li>
@@ -1032,19 +1018,19 @@ export default function HomePage() {
 
       <div className="flex space-x-4 mb-6 border-b pb-2 relative">
         <button
-          onClick={() => setActiveTab('visualize')}
+          onClick={() => { setActiveTab('visualize'); setAnalysisType(null); }}
           className={`px-4 py-2 font-medium ${activeTab === 'visualize' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}
         >
           Визуализация графа
         </button>
         <button
-          onClick={() => { setActiveTab('upload'); clearMessages(); }}
+          onClick={() => { setActiveTab('upload'); setAnalysisType(null); clearMessages(); }}
           className={`px-4 py-2 font-medium ${activeTab === 'upload' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}
         >
           Загрузка системы в граф
         </button>
         <button
-          onClick={() => { setActiveTab('delete'); clearMessages(); }}
+          onClick={() => { setActiveTab('delete'); setAnalysisType(null); clearMessages(); }}
           className={`px-4 py-2 font-medium ${activeTab === 'delete' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}
         >
           Удаление графа

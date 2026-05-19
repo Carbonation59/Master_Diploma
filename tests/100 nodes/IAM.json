@@ -1,0 +1,3820 @@
+{
+  "configuration": {},
+  "description": "Identity and Access Management Platform — управление идентификацией и доступом",
+  "documentation": {
+    "decisions": [
+      {
+        "content": "# ADR 001 Протокол федерации идентификации\n\n## Status\nAccepted\n\n## Context\nНеобходимо поддержать единый вход (SSO) для корпоративных приложений и потребительских сервисов.\n\n## Decision\nИспользовать OpenID Connect (OIDC) поверх OAuth 2.0 для всех новых интеграций. SAML 2.0 — только для legacy-систем.\n\n## Consequences\nВсе новые сервисы должны поддерживать OIDC-клиентский SDK. Требуется миграционный план для SAML-интеграций.",
+        "date": "2024-04-01T10:00:00Z",
+        "format": "Markdown",
+        "id": "1",
+        "status": "Accepted",
+        "title": "ADR 001 Протокол федерации идентификации"
+      },
+      {
+        "content": "# ADR 002 Хранение токенов и сессий\n\n## Status\nAccepted\n\n## Context\nДля обеспечения горизонтального масштабирования необходимо stateless-хранение сессий.\n\n## Decision\nJWT access tokens (15 минут TTL) + Redis для хранения refresh tokens и active sessions. Revocation через Redis blacklist.\n\n## Consequences\nНеобходима репликация Redis с автоматическим failover.",
+        "date": "2024-04-05T10:00:00Z",
+        "format": "Markdown",
+        "id": "2",
+        "status": "Accepted",
+        "title": "ADR 002 Хранение токенов и сессий"
+      },
+      {
+        "content": "# ADR 003 MFA-стратегия\n\n## Status\nAccepted\n\n## Context\nТребуется усиленная аутентификация для привилегированных операций.\n\n## Decision\nOTP через SMS (TOTP) — для абонентов. Hardware tokens (FIDO2/WebAuthn) — для сотрудников с привилегированным доступом.\n\n## Consequences\nИнтеграция с SMS-платформой и поддержка FIDO2 в Authorization Server.",
+        "date": "2024-04-10T10:00:00Z",
+        "format": "Markdown",
+        "id": "3",
+        "status": "Accepted",
+        "title": "ADR 003 MFA-стратегия"
+      }
+    ],
+    "sections": [
+      {
+        "content": "## Введение\n\nPlatform Identity and Access Management (IAM) обеспечивает централизованную аутентификацию, авторизацию и управление доступом для всех сервисов экосистемы Beeline.\n\n### Ключевые функции\n- Единый вход (SSO) через OIDC/OAuth 2.0\n- Управление жизненным циклом учётных записей пользователей\n- Multi-Factor Authentication (MFA)\n- RBAC/ABAC контроль доступа\n- Централизованное управление политиками доступа\n- Audit Log всех операций аутентификации/авторизации",
+        "filename": "01_main.md",
+        "format": "Markdown",
+        "order": 1,
+        "title": ""
+      },
+      {
+        "content": "## HLD\n\n### Контекстная диаграмма\n![](embed:context)\n",
+        "filename": "02_HLD.md",
+        "format": "Markdown",
+        "order": 2,
+        "title": ""
+      },
+      {
+        "content": "### Контейнерная диаграмма\n![](embed:containers)\n",
+        "filename": "03_containers.md",
+        "format": "Markdown",
+        "order": 3,
+        "title": ""
+      },
+      {
+        "content": "### Deployment диаграмма\n![](embed:Production-01)\n",
+        "filename": "04_deployment.md",
+        "format": "Markdown",
+        "order": 4,
+        "title": ""
+      }
+    ]
+  },
+  "id": 600000003,
+  "lastModifiedAgent": "structurizr-cli/",
+  "lastModifiedDate": "2025-05-18T10:00:00Z",
+  "lastModifiedUser": "architect@beeline.ru",
+  "model": {
+    "properties": {
+      "structurizr.groupSeparator": "/",
+      "workspace_cmdb": "IAM",
+      "architect": "Сидоров Дмитрий Александрович <DASidorov@beeline.ru>"
+    },
+    "people": [
+      {
+        "description": "Абонент Beeline, аутентифицирующийся в цифровых сервисах",
+        "id": "30001",
+        "location": "External",
+        "name": "Subscriber",
+        "properties": {
+          "structurizr.dsl.identifier": "iam_subscriber",
+          "rps": 20000,
+          "error_rate": 0.02,
+          "latency": 200,
+          "technology": "HTTPS/OIDC"
+        },
+        "relationships": [
+          {
+            "description": "Authenticates via SSO",
+            "destinationId": "30010",
+            "id": "30100",
+            "sourceId": "30001",
+            "tags": "Relationship",
+            "technology": "HTTPS/OIDC"
+          }
+        ],
+        "tags": "Element,Person"
+      },
+      {
+        "description": "Сотрудник компании, получающий доступ к корпоративным приложениям",
+        "id": "30002",
+        "location": "Internal",
+        "name": "Employee",
+        "properties": {
+          "structurizr.dsl.identifier": "iam_employee",
+          "rps": 3000,
+          "error_rate": 0.01,
+          "latency": 300,
+          "technology": "HTTPS/SAML"
+        },
+        "relationships": [
+          {
+            "description": "Authenticates via corporate SSO",
+            "destinationId": "30010",
+            "id": "30101",
+            "sourceId": "30002",
+            "tags": "Relationship",
+            "technology": "HTTPS/SAML"
+          }
+        ],
+        "tags": "Element,Person"
+      },
+      {
+        "description": "Администратор IAM-платформы",
+        "id": "30003",
+        "location": "Internal",
+        "name": "IAM Administrator",
+        "properties": {
+          "structurizr.dsl.identifier": "iam_admin",
+          "rps": 5,
+          "error_rate": 0.02,
+          "latency": 500,
+          "technology": "HTTPS"
+        },
+        "relationships": [
+          {
+            "description": "Manages policies and users via admin console",
+            "destinationId": "30050",
+            "id": "30102",
+            "sourceId": "30003",
+            "tags": "Relationship",
+            "technology": "HTTPS"
+          }
+        ],
+        "tags": "Element,Person"
+      }
+    ],
+    "softwareSystems": [
+      {
+        "containers": [
+          {
+            "components": [
+              {
+                "description": "Обработчик Authorization Code Flow",
+                "id": "30011",
+                "name": "Authorization Code Handler",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.auth_server.authcode_handler",
+                  "rps": 15000,
+                  "error_rate": 0.005,
+                  "latency": 50,
+                  "technology": "Java/Keycloak"
+                },
+                "relationships": [
+                  {
+                    "description": "Validates credentials",
+                    "destinationId": "30030",
+                    "id": "30150",
+                    "sourceId": "30011",
+                    "technology": "LDAP"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Java/Keycloak"
+              },
+              {
+                "description": "Генерация и валидация JWT токенов",
+                "id": "30012",
+                "name": "Token Service",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.auth_server.token_service",
+                  "rps": 40000,
+                  "error_rate": 0.001,
+                  "latency": 5,
+                  "technology": "Java/Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Stores refresh tokens",
+                    "destinationId": "30070",
+                    "id": "30151",
+                    "sourceId": "30012",
+                    "technology": "Redis"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Java/Go"
+              },
+              {
+                "description": "Обработчик SAML 2.0 assertions",
+                "id": "30013",
+                "name": "SAML Handler",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.auth_server.saml_handler",
+                  "rps": 2000,
+                  "error_rate": 0.01,
+                  "latency": 80,
+                  "technology": "Java"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Java"
+              },
+              {
+                "description": "OIDC UserInfo endpoint",
+                "id": "30014",
+                "name": "UserInfo Endpoint",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.auth_server.userinfo",
+                  "rps": 10000,
+                  "error_rate": 0.002,
+                  "latency": 20,
+                  "technology": "HTTPS/OIDC"
+                },
+                "relationships": [
+                  {
+                    "description": "Reads user attributes",
+                    "destinationId": "30030",
+                    "id": "30152",
+                    "sourceId": "30014",
+                    "technology": "LDAP"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "HTTPS/OIDC"
+              },
+              {
+                "description": "Управление согласиями пользователей (consent)",
+                "id": "30015",
+                "name": "Consent Manager",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.auth_server.consent_manager",
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 30,
+                  "technology": "Java"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Java"
+              }
+            ],
+            "description": "Authorization Server — OIDC/OAuth 2.0 сервер авторизации (на базе Keycloak)",
+            "id": "30010",
+            "name": "Authorization Server",
+            "properties": {
+              "structurizr.dsl.identifier": "iam.auth_server",
+              "rps": 40000,
+              "error_rate": 0.005,
+              "latency": 50,
+              "technology": "Java/Keycloak"
+            },
+            "relationships": [
+              {
+                "description": "Validates credentials against LDAP",
+                "destinationId": "30030",
+                "id": "30200",
+                "sourceId": "30010",
+                "technology": "LDAP"
+              },
+              {
+                "description": "Stores active sessions",
+                "destinationId": "30070",
+                "id": "30201",
+                "sourceId": "30010",
+                "technology": "Redis"
+              },
+              {
+                "description": "Verifies MFA",
+                "destinationId": "30020",
+                "id": "30202",
+                "sourceId": "30010",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Fetches user attributes",
+                "destinationId": "30040",
+                "id": "30203",
+                "sourceId": "30010",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Publishes auth events to audit log",
+                "destinationId": "30090",
+                "id": "30204",
+                "sourceId": "30010",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Checks risk score",
+                "destinationId": "30060",
+                "id": "30205",
+                "sourceId": "30010",
+                "technology": "gRPC"
+              },
+              {
+                "id": "30808",
+                "sourceId": "30010",
+                "destinationId": "30150",
+                "description": "Fetches signing keys from KMS",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30809",
+                "sourceId": "30010",
+                "destinationId": "30140",
+                "description": "Records consent",
+                "technology": "gRPC"
+              },
+              {
+                "id": "30810",
+                "sourceId": "30010",
+                "destinationId": "30160",
+                "description": "Triggers notification",
+                "technology": "gRPC"
+              },
+              {
+                "id": "30815",
+                "sourceId": "30010",
+                "destinationId": "30120",
+                "description": "Delegates federated auth",
+                "technology": "HTTPS/OIDC"
+              },
+              {
+                "id": "30816",
+                "sourceId": "30010",
+                "destinationId": "30130",
+                "description": "Delegates password management",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30850",
+                "sourceId": "30010",
+                "destinationId": "30100",
+                "description": "Routes through API gateway",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30851",
+                "sourceId": "30010",
+                "destinationId": "30110",
+                "description": "Triggers provisioning on registration",
+                "technology": "SCIM"
+              },
+              {
+                "id": "30852",
+                "sourceId": "30010",
+                "destinationId": "30120",
+                "description": "Delegates federated auth",
+                "technology": "HTTPS/OIDC"
+              },
+              {
+                "id": "30853",
+                "sourceId": "30010",
+                "destinationId": "30130",
+                "description": "Delegates password reset",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30854",
+                "sourceId": "30010",
+                "destinationId": "30140",
+                "description": "Records user consent",
+                "technology": "gRPC"
+              },
+              {
+                "id": "30855",
+                "sourceId": "30010",
+                "destinationId": "30150",
+                "description": "Fetches signing key",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30856",
+                "sourceId": "30010",
+                "destinationId": "30160",
+                "description": "Sends login notification",
+                "technology": "gRPC"
+              },
+              {
+                "id": "30857",
+                "sourceId": "30010",
+                "destinationId": "30460",
+                "description": "Validates against AD",
+                "technology": "LDAP"
+              },
+              {
+                "id": "30858",
+                "sourceId": "30010",
+                "destinationId": "30497",
+                "description": "Reports auth metrics",
+                "technology": "SNMP/HTTP"
+              },
+              {
+                "id": "31001",
+                "sourceId": "30010",
+                "destinationId": "30040",
+                "description": "Reads user attributes",
+                "technology": "gRPC"
+              },
+              {
+                "id": "31002",
+                "sourceId": "30010",
+                "destinationId": "30093",
+                "description": "Sends auth events to audit",
+                "technology": "Kafka"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Java/Keycloak"
+          },
+          {
+            "components": [
+              {
+                "description": "Отправка OTP по SMS",
+                "id": "30021",
+                "name": "SMS OTP Provider",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.mfa_service.sms_otp",
+                  "rps": 10000,
+                  "error_rate": 0.03,
+                  "latency": 500,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Sends OTP via SMS gateway",
+                    "destinationId": "30430",
+                    "id": "30153",
+                    "sourceId": "30021",
+                    "technology": "HTTPS/REST"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "TOTP (Time-based OTP) провайдер",
+                "id": "30022",
+                "name": "TOTP Provider",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.mfa_service.totp",
+                  "rps": 5000,
+                  "error_rate": 0.01,
+                  "latency": 10,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "FIDO2/WebAuthn провайдер для hardware tokens",
+                "id": "30023",
+                "name": "FIDO2 Provider",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.mfa_service.fido2",
+                  "rps": 1000,
+                  "error_rate": 0.005,
+                  "latency": 100,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Хранение MFA-устройств и статусов",
+                "id": "30024",
+                "name": "MFA Device Registry",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.mfa_service.device_registry",
+                  "rps": 3000,
+                  "error_rate": 0.005,
+                  "latency": 15,
+                  "technology": "Go/PostgreSQL"
+                },
+                "relationships": [
+                  {
+                    "description": "Stores device data",
+                    "destinationId": "30075",
+                    "id": "30154",
+                    "sourceId": "30024",
+                    "technology": "JDBC"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go/PostgreSQL"
+              }
+            ],
+            "description": "MFA Service — многофакторная аутентификация: SMS OTP, TOTP, FIDO2",
+            "id": "30020",
+            "name": "MFA Service",
+            "properties": {
+              "structurizr.dsl.identifier": "iam.mfa_service",
+              "rps": 15000,
+              "error_rate": 0.02,
+              "latency": 200,
+              "technology": "Go"
+            },
+            "relationships": [
+              {
+                "description": "Sends OTP via SMS",
+                "destinationId": "30430",
+                "id": "30210",
+                "sourceId": "30020",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Stores MFA device data",
+                "destinationId": "30075",
+                "id": "30211",
+                "sourceId": "30020",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30812",
+                "sourceId": "30020",
+                "destinationId": "30160",
+                "description": "Sends OTP request",
+                "technology": "gRPC"
+              },
+              {
+                "id": "30859",
+                "sourceId": "30020",
+                "destinationId": "30070",
+                "description": "Reads MFA session state",
+                "technology": "Redis"
+              },
+              {
+                "id": "30860",
+                "sourceId": "30020",
+                "destinationId": "30075",
+                "description": "Reads device registry",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30861",
+                "sourceId": "30020",
+                "destinationId": "30090",
+                "description": "Publishes MFA events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "30862",
+                "sourceId": "30020",
+                "destinationId": "30460",
+                "description": "Validates LDAP account before MFA",
+                "technology": "LDAP"
+              },
+              {
+                "id": "30863",
+                "sourceId": "30020",
+                "destinationId": "30496",
+                "description": "Reports MFA metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "31003",
+                "sourceId": "30020",
+                "destinationId": "30010",
+                "description": "Returns MFA result",
+                "technology": "HTTPS/REST"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go"
+          },
+          {
+            "description": "LDAP Directory — хранилище учётных записей (Active Directory)",
+            "id": "30030",
+            "name": "LDAP Directory",
+            "properties": {
+              "structurizr.dsl.identifier": "iam.ldap_directory",
+              "rps": 20000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "LDAP/AD"
+            },
+            "relationships": [
+              {
+                "id": "30912",
+                "sourceId": "30030",
+                "destinationId": "30460",
+                "description": "Replicates from AD",
+                "technology": "LDAP"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "LDAP/AD"
+          },
+          {
+            "components": [
+              {
+                "description": "Хранение профилей и атрибутов пользователей",
+                "id": "30041",
+                "name": "User Profile Store",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.user_store.profile_store",
+                  "rps": 25000,
+                  "error_rate": 0.002,
+                  "latency": 8,
+                  "technology": "PostgreSQL"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "PostgreSQL"
+              },
+              {
+                "description": "Синхронизация данных с AD/LDAP",
+                "id": "30042",
+                "name": "AD Sync Worker",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.user_store.ad_sync",
+                  "rps": 500,
+                  "error_rate": 0.005,
+                  "latency": 200,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Reads changes from LDAP",
+                    "destinationId": "30030",
+                    "id": "30155",
+                    "sourceId": "30042",
+                    "technology": "LDAP"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Управление группами и ролями",
+                "id": "30043",
+                "name": "Group & Role Manager",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.user_store.group_manager",
+                  "rps": 2000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "User Store — единое хранилище профилей и атрибутов пользователей",
+            "id": "30040",
+            "name": "User Store",
+            "properties": {
+              "structurizr.dsl.identifier": "iam.user_store",
+              "rps": 25000,
+              "error_rate": 0.002,
+              "latency": 10,
+              "technology": "Go/PostgreSQL"
+            },
+            "relationships": [
+              {
+                "description": "Syncs with LDAP Directory",
+                "destinationId": "30030",
+                "id": "30220",
+                "sourceId": "30040",
+                "technology": "LDAP"
+              },
+              {
+                "description": "Persists user profiles",
+                "destinationId": "30075",
+                "id": "30221",
+                "sourceId": "30040",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30864",
+                "sourceId": "30040",
+                "destinationId": "30090",
+                "description": "Publishes user change events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "30865",
+                "sourceId": "30040",
+                "destinationId": "30496",
+                "description": "Reports user store metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "30866",
+                "sourceId": "30040",
+                "destinationId": "30460",
+                "description": "Syncs with AD bidirectionally",
+                "technology": "LDAP"
+              },
+              {
+                "id": "30867",
+                "sourceId": "30040",
+                "destinationId": "30440",
+                "description": "Provisions to target systems",
+                "technology": "SCIM"
+              },
+              {
+                "id": "31004",
+                "sourceId": "30040",
+                "destinationId": "30010",
+                "description": "Provides user data on demand",
+                "technology": "gRPC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go/PostgreSQL"
+          },
+          {
+            "components": [
+              {
+                "description": "Управление политиками RBAC",
+                "id": "30051",
+                "name": "RBAC Policy Manager",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.policy_engine.rbac_manager",
+                  "rps": 500,
+                  "error_rate": 0.01,
+                  "latency": 30,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Веб-интерфейс администратора IAM",
+                "id": "30052",
+                "name": "Admin Console UI",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.policy_engine.admin_ui",
+                  "rps": 10,
+                  "error_rate": 0.02,
+                  "latency": 300,
+                  "technology": "React"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "React"
+              },
+              {
+                "description": "Управление областями (realms) и клиентами OIDC",
+                "id": "30053",
+                "name": "Realm Manager",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.policy_engine.realm_manager",
+                  "rps": 100,
+                  "error_rate": 0.01,
+                  "latency": 50,
+                  "technology": "Java"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Java"
+              },
+              {
+                "description": "Управление жизненным циклом учётных записей (JIT provisioning)",
+                "id": "30054",
+                "name": "Lifecycle Manager",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.policy_engine.lifecycle_manager",
+                  "rps": 200,
+                  "error_rate": 0.01,
+                  "latency": 100,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Provisions user in target system",
+                    "destinationId": "30440",
+                    "id": "30156",
+                    "sourceId": "30054",
+                    "technology": "SCIM"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Admin & Policy Console — управление политиками доступа и ролевой моделью",
+            "id": "30050",
+            "name": "Admin Console",
+            "properties": {
+              "structurizr.dsl.identifier": "iam.admin_console",
+              "rps": 100,
+              "error_rate": 0.01,
+              "latency": 100,
+              "technology": "Java/React"
+            },
+            "relationships": [
+              {
+                "description": "Manages user accounts",
+                "destinationId": "30040",
+                "id": "30230",
+                "sourceId": "30050",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Publishes policy change events",
+                "destinationId": "30090",
+                "id": "30231",
+                "sourceId": "30050",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Provisions user in downstream systems",
+                "destinationId": "30440",
+                "id": "30232",
+                "sourceId": "30050",
+                "technology": "SCIM"
+              },
+              {
+                "id": "30811",
+                "sourceId": "30050",
+                "destinationId": "30110",
+                "description": "Provisions user",
+                "technology": "SCIM"
+              },
+              {
+                "id": "30868",
+                "sourceId": "30050",
+                "destinationId": "30070",
+                "description": "Revokes sessions on lockout",
+                "technology": "Redis"
+              },
+              {
+                "id": "30869",
+                "sourceId": "30050",
+                "destinationId": "30075",
+                "description": "Reads/writes policy DB",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30870",
+                "sourceId": "30050",
+                "destinationId": "30150",
+                "description": "Rotates keys via KMS",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30871",
+                "sourceId": "30050",
+                "destinationId": "30140",
+                "description": "Manages consent policies",
+                "technology": "gRPC"
+              },
+              {
+                "id": "30872",
+                "sourceId": "30050",
+                "destinationId": "30496",
+                "description": "Reports admin metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "30873",
+                "sourceId": "30050",
+                "destinationId": "30460",
+                "description": "Manages AD groups",
+                "technology": "LDAP"
+              },
+              {
+                "id": "31005",
+                "sourceId": "30050",
+                "destinationId": "30010",
+                "description": "Configures auth flows",
+                "technology": "HTTPS"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Java/React"
+          },
+          {
+            "components": [
+              {
+                "description": "Анализ поведенческих паттернов входа",
+                "id": "30061",
+                "name": "Behavior Analyzer",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.risk_engine.behavior_analyzer",
+                  "rps": 20000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Python/ML"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Python/ML"
+              },
+              {
+                "description": "Оценка геолокации и устройства",
+                "id": "30062",
+                "name": "Device & Geo Analyzer",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.risk_engine.geo_analyzer",
+                  "rps": 20000,
+                  "error_rate": 0.005,
+                  "latency": 15,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Агрегация и выдача скора риска",
+                "id": "30063",
+                "name": "Risk Score Aggregator",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.risk_engine.score_aggregator",
+                  "rps": 20000,
+                  "error_rate": 0.003,
+                  "latency": 10,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Risk Engine — оценка риска попытки аутентификации в реальном времени",
+            "id": "30060",
+            "name": "Risk Engine",
+            "properties": {
+              "structurizr.dsl.identifier": "iam.risk_engine",
+              "rps": 20000,
+              "error_rate": 0.005,
+              "latency": 25,
+              "technology": "Go/Python"
+            },
+            "relationships": [
+              {
+                "description": "Reads auth history for risk analysis",
+                "destinationId": "30080",
+                "id": "30240",
+                "sourceId": "30060",
+                "technology": "HTTP"
+              },
+              {
+                "description": "Publishes risk events",
+                "destinationId": "30090",
+                "id": "30241",
+                "sourceId": "30060",
+                "technology": "Kafka"
+              },
+              {
+                "id": "30806",
+                "sourceId": "30060",
+                "destinationId": "30496",
+                "description": "Sends risk metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "30874",
+                "sourceId": "30060",
+                "destinationId": "30070",
+                "description": "Reads session patterns",
+                "technology": "Redis"
+              },
+              {
+                "id": "30875",
+                "sourceId": "30060",
+                "destinationId": "30075",
+                "description": "Reads user risk history",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30876",
+                "sourceId": "30060",
+                "destinationId": "30100",
+                "description": "Reports risk score via API GW",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30877",
+                "sourceId": "30060",
+                "destinationId": "30450",
+                "description": "Sends risk alerts to SIEM",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "31006",
+                "sourceId": "30060",
+                "destinationId": "30010",
+                "description": "Returns risk score",
+                "technology": "gRPC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go/Python"
+          },
+          {
+            "description": "Session Store — хранилище активных сессий и refresh tokens",
+            "id": "30070",
+            "name": "Session Store",
+            "properties": {
+              "structurizr.dsl.identifier": "iam.session_store",
+              "rps": 80000,
+              "error_rate": 0.001,
+              "latency": 1,
+              "technology": "Redis"
+            },
+            "relationships": [
+              {
+                "id": "30913",
+                "sourceId": "30070",
+                "destinationId": "30496",
+                "description": "Reports Redis metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "31007",
+                "sourceId": "30070",
+                "destinationId": "30010",
+                "description": "Returns active session",
+                "technology": "Redis"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Redis"
+          },
+          {
+            "description": "PostgreSQL БД для пользователей, ролей, политик, MFA-устройств",
+            "id": "30075",
+            "name": "IAM Database",
+            "properties": {
+              "structurizr.dsl.identifier": "iam.iam_db",
+              "rps": 10000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "PostgreSQL"
+            },
+            "relationships": [
+              {
+                "id": "30914",
+                "sourceId": "30075",
+                "destinationId": "30496",
+                "description": "Reports DB metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "31008",
+                "sourceId": "30075",
+                "destinationId": "30010",
+                "description": "Provides policy data",
+                "technology": "JDBC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "PostgreSQL"
+          },
+          {
+            "description": "Audit Log Store — хранилище событий аутентификации и авторизации",
+            "id": "30080",
+            "name": "Audit Log Store",
+            "properties": {
+              "structurizr.dsl.identifier": "iam.audit_log_store",
+              "rps": 50000,
+              "error_rate": 0.001,
+              "latency": 10,
+              "technology": "Elasticsearch"
+            },
+            "relationships": [],
+            "tags": "Element,Container",
+            "technology": "Elasticsearch"
+          },
+          {
+            "description": "Event Bus — Kafka-брокер для событий IAM",
+            "id": "30090",
+            "name": "IAM Event Bus",
+            "properties": {
+              "structurizr.dsl.identifier": "iam.event_bus",
+              "rps": 60000,
+              "error_rate": 0.0005,
+              "latency": 5,
+              "technology": "Kafka"
+            },
+            "relationships": [
+              {
+                "id": "30915",
+                "sourceId": "30090",
+                "destinationId": "30450",
+                "description": "Forwards security events to SIEM",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "30916",
+                "sourceId": "30090",
+                "destinationId": "30496",
+                "description": "Reports Kafka metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "31009",
+                "sourceId": "30090",
+                "destinationId": "30093",
+                "description": "Delivers audit events",
+                "technology": "Kafka"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Kafka"
+          },
+          {
+            "components": [
+              {
+                "description": "Потребитель событий аудита из Kafka",
+                "id": "30091",
+                "name": "Audit Event Consumer",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.audit_processor.event_consumer",
+                  "rps": 60000,
+                  "error_rate": 0.002,
+                  "latency": 15,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Writes to Audit Log Store",
+                    "destinationId": "30080",
+                    "id": "30157",
+                    "sourceId": "30091",
+                    "technology": "HTTP"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Детектор аномалий в потоке аудита",
+                "id": "30092",
+                "name": "Anomaly Detector",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.audit_processor.anomaly_detector",
+                  "rps": 10000,
+                  "error_rate": 0.005,
+                  "latency": 30,
+                  "technology": "Python/ML"
+                },
+                "relationships": [
+                  {
+                    "description": "Triggers alert",
+                    "destinationId": "30450",
+                    "id": "30158",
+                    "sourceId": "30092",
+                    "technology": "HTTPS/REST"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Python/ML"
+              }
+            ],
+            "description": "Audit Processor — обработка и хранение событий аудита безопасности",
+            "id": "30093",
+            "name": "Audit Processor",
+            "properties": {
+              "structurizr.dsl.identifier": "iam.audit_processor",
+              "rps": 60000,
+              "error_rate": 0.002,
+              "latency": 15,
+              "technology": "Go/Python"
+            },
+            "relationships": [
+              {
+                "description": "Consumes audit events",
+                "destinationId": "30090",
+                "id": "30250",
+                "sourceId": "30093",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Writes to Audit Log Store",
+                "destinationId": "30080",
+                "id": "30251",
+                "sourceId": "30093",
+                "technology": "HTTP"
+              },
+              {
+                "id": "30807",
+                "sourceId": "30093",
+                "destinationId": "30496",
+                "description": "Sends audit metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "30813",
+                "sourceId": "30093",
+                "destinationId": "30497",
+                "description": "Sends health alerts",
+                "technology": "SNMP/HTTP"
+              },
+              {
+                "id": "30878",
+                "sourceId": "30093",
+                "destinationId": "30075",
+                "description": "Stores retention metadata",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30879",
+                "sourceId": "30093",
+                "destinationId": "30450",
+                "description": "Sends audit to SIEM",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "30880",
+                "sourceId": "30093",
+                "destinationId": "30480",
+                "description": "Sends compliance data",
+                "technology": "HTTPS/REST"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go/Python"
+          },
+          {
+            "components": [
+              {
+                "description": "Проверка introspection endpoint",
+                "id": "30096",
+                "name": "Token Introspection Endpoint",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.token_gateway.introspection",
+                  "rps": 30000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Validates token signature",
+                    "destinationId": "30070",
+                    "id": "30159",
+                    "sourceId": "30096",
+                    "technology": "Redis"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "JWKS endpoint для публикации публичных ключей",
+                "id": "30097",
+                "name": "JWKS Endpoint",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam.token_gateway.jwks",
+                  "rps": 5000,
+                  "error_rate": 0.001,
+                  "latency": 3,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Token Gateway — сервис валидации и интроспекции токенов для downstream-систем",
+            "id": "30095",
+            "name": "Token Gateway",
+            "properties": {
+              "structurizr.dsl.identifier": "iam.token_gateway",
+              "rps": 100000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "Go"
+            },
+            "relationships": [
+              {
+                "description": "Validates tokens via session store",
+                "destinationId": "30070",
+                "id": "30260",
+                "sourceId": "30095",
+                "technology": "Redis"
+              },
+              {
+                "description": "Logs token validation events",
+                "destinationId": "30090",
+                "id": "30261",
+                "sourceId": "30095",
+                "technology": "Kafka"
+              },
+              {
+                "id": "30805",
+                "sourceId": "30095",
+                "destinationId": "30150",
+                "description": "Fetches JWKS from KMS",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30814",
+                "sourceId": "30095",
+                "destinationId": "30100",
+                "description": "Token validation via API GW",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30881",
+                "sourceId": "30095",
+                "destinationId": "30075",
+                "description": "Reads token metadata",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30882",
+                "sourceId": "30095",
+                "destinationId": "30090",
+                "description": "Logs validation events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "30883",
+                "sourceId": "30095",
+                "destinationId": "30150",
+                "description": "Fetches public keys",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30884",
+                "sourceId": "30095",
+                "destinationId": "30450",
+                "description": "Sends token abuse alerts",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "30885",
+                "sourceId": "30095",
+                "destinationId": "30496",
+                "description": "Reports gateway metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "31010",
+                "sourceId": "30095",
+                "destinationId": "30010",
+                "description": "Routes token requests",
+                "technology": "HTTPS"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go"
+          },
+          {
+            "id": "30100",
+            "name": "API Gateway (Kong)",
+            "description": "API Gateway для IAM endpoints",
+            "technology": "Kong",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Kong",
+              "structurizr.dsl.identifier": "iam.api_gateway"
+            },
+            "components": [
+              {
+                "id": "30101",
+                "name": "Rate Limiter",
+                "description": "Ограничение запросов",
+                "technology": "Kong/Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Kong/Go",
+                  "structurizr.dsl.identifier": "iam.api_gw.rate_limiter"
+                },
+                "relationships": []
+              },
+              {
+                "id": "30102",
+                "name": "Token Validator Plugin",
+                "description": "Плагин валидации токенов",
+                "technology": "Kong",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Kong",
+                  "structurizr.dsl.identifier": "iam.api_gw.token_validator"
+                },
+                "relationships": [
+                  {
+                    "id": "30600",
+                    "sourceId": "30102",
+                    "destinationId": "30095",
+                    "description": "Validates token",
+                    "technology": "Redis"
+                  }
+                ]
+              },
+              {
+                "id": "30103",
+                "name": "Request Logger",
+                "description": "Логирование запросов",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.api_gw.req_logger"
+                },
+                "relationships": [
+                  {
+                    "id": "30601",
+                    "sourceId": "30103",
+                    "destinationId": "30090",
+                    "description": "Publishes access log events",
+                    "technology": "Kafka"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "30700",
+                "sourceId": "30100",
+                "destinationId": "30010",
+                "description": "Forwards auth requests",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30701",
+                "sourceId": "30100",
+                "destinationId": "30095",
+                "description": "Forwards token validation",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30702",
+                "sourceId": "30100",
+                "destinationId": "30090",
+                "description": "Logs requests",
+                "technology": "Kafka"
+              },
+              {
+                "id": "30886",
+                "sourceId": "30100",
+                "destinationId": "30060",
+                "description": "Calls risk engine for scoring",
+                "technology": "gRPC"
+              },
+              {
+                "id": "30887",
+                "sourceId": "30100",
+                "destinationId": "30075",
+                "description": "Reads rate limit config",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30888",
+                "sourceId": "30100",
+                "destinationId": "30450",
+                "description": "Sends access log to SIEM",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "30889",
+                "sourceId": "30100",
+                "destinationId": "30496",
+                "description": "Reports API metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "31011",
+                "sourceId": "30100",
+                "destinationId": "30020",
+                "description": "Forwards MFA requests",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "31012",
+                "sourceId": "30100",
+                "destinationId": "30040",
+                "description": "Forwards user info requests",
+                "technology": "gRPC"
+              },
+              {
+                "id": "31013",
+                "sourceId": "30100",
+                "destinationId": "30060",
+                "description": "Forwards risk check",
+                "technology": "gRPC"
+              }
+            ]
+          },
+          {
+            "id": "30110",
+            "name": "Provisioning Service",
+            "description": "SCIM/LDAP провизионирование учётных записей",
+            "technology": "Go",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Go",
+              "structurizr.dsl.identifier": "iam.provisioning"
+            },
+            "components": [
+              {
+                "id": "30111",
+                "name": "SCIM Provisioner",
+                "description": "Провизионирование SCIM",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.provisioning.scim"
+                },
+                "relationships": [
+                  {
+                    "id": "30602",
+                    "sourceId": "30111",
+                    "destinationId": "30440",
+                    "description": "Provisions account",
+                    "technology": "SCIM"
+                  }
+                ]
+              },
+              {
+                "id": "30112",
+                "name": "LDAP Provisioner",
+                "description": "Запись в LDAP",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.provisioning.ldap"
+                },
+                "relationships": [
+                  {
+                    "id": "30603",
+                    "sourceId": "30112",
+                    "destinationId": "30030",
+                    "description": "Creates LDAP entry",
+                    "technology": "LDAP"
+                  }
+                ]
+              },
+              {
+                "id": "30113",
+                "name": "Deprovisioning Handler",
+                "description": "Удаление/блокировка аккаунтов",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.provisioning.deprov"
+                },
+                "relationships": [
+                  {
+                    "id": "30604",
+                    "sourceId": "30113",
+                    "destinationId": "30070",
+                    "description": "Revokes sessions",
+                    "technology": "Redis"
+                  }
+                ]
+              },
+              {
+                "id": "30114",
+                "name": "Provisioning Audit",
+                "description": "Аудит провизионирования",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.provisioning.audit"
+                },
+                "relationships": [
+                  {
+                    "id": "30605",
+                    "sourceId": "30114",
+                    "destinationId": "30090",
+                    "description": "Publishes provisioning events",
+                    "technology": "Kafka"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "30710",
+                "sourceId": "30110",
+                "destinationId": "30440",
+                "description": "Provisions to target systems",
+                "technology": "SCIM"
+              },
+              {
+                "id": "30711",
+                "sourceId": "30110",
+                "destinationId": "30030",
+                "description": "Creates/updates LDAP entries",
+                "technology": "LDAP"
+              },
+              {
+                "id": "30712",
+                "sourceId": "30110",
+                "destinationId": "30070",
+                "description": "Revokes sessions",
+                "technology": "Redis"
+              },
+              {
+                "id": "30713",
+                "sourceId": "30110",
+                "destinationId": "30090",
+                "description": "Publishes provisioning events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "30714",
+                "sourceId": "30110",
+                "destinationId": "30075",
+                "description": "Persists provisioning state",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30890",
+                "sourceId": "30110",
+                "destinationId": "30460",
+                "description": "Syncs provisioned accounts to AD",
+                "technology": "LDAP"
+              },
+              {
+                "id": "30891",
+                "sourceId": "30110",
+                "destinationId": "30450",
+                "description": "Sends provisioning alerts",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "30892",
+                "sourceId": "30110",
+                "destinationId": "30496",
+                "description": "Reports provisioning metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "31014",
+                "sourceId": "30110",
+                "destinationId": "30040",
+                "description": "Syncs provisioned users",
+                "technology": "gRPC"
+              }
+            ]
+          },
+          {
+            "id": "30120",
+            "name": "Federation Service",
+            "description": "Федерация и внешние IdP",
+            "technology": "Java",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Java",
+              "structurizr.dsl.identifier": "iam.federation"
+            },
+            "components": [
+              {
+                "id": "30121",
+                "name": "SAML IDP Connector",
+                "description": "Внешние SAML IdP",
+                "technology": "Java",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Java",
+                  "structurizr.dsl.identifier": "iam.federation.saml_idp"
+                },
+                "relationships": [
+                  {
+                    "id": "30606",
+                    "sourceId": "30121",
+                    "destinationId": "30460",
+                    "description": "Syncs with AD",
+                    "technology": "LDAP"
+                  }
+                ]
+              },
+              {
+                "id": "30122",
+                "name": "Social Login Handler",
+                "description": "Вход через соцсети",
+                "technology": "Java",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Java",
+                  "structurizr.dsl.identifier": "iam.federation.social"
+                },
+                "relationships": [
+                  {
+                    "id": "30607",
+                    "sourceId": "30122",
+                    "destinationId": "30010",
+                    "description": "Issues token after social auth",
+                    "technology": "HTTPS/OIDC"
+                  }
+                ]
+              },
+              {
+                "id": "30123",
+                "name": "IdP Metadata Manager",
+                "description": "Метаданные IdP",
+                "technology": "Java",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Java",
+                  "structurizr.dsl.identifier": "iam.federation.metadata"
+                },
+                "relationships": []
+              }
+            ],
+            "relationships": [
+              {
+                "id": "30720",
+                "sourceId": "30120",
+                "destinationId": "30460",
+                "description": "Federates with corporate AD",
+                "technology": "LDAP"
+              },
+              {
+                "id": "30721",
+                "sourceId": "30120",
+                "destinationId": "30010",
+                "description": "Issues tokens after federated auth",
+                "technology": "HTTPS/OIDC"
+              },
+              {
+                "id": "30722",
+                "sourceId": "30120",
+                "destinationId": "30090",
+                "description": "Publishes federation events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "30893",
+                "sourceId": "30120",
+                "destinationId": "30075",
+                "description": "Stores federation config",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30894",
+                "sourceId": "30120",
+                "destinationId": "30070",
+                "description": "Manages federated sessions",
+                "technology": "Redis"
+              },
+              {
+                "id": "30895",
+                "sourceId": "30120",
+                "destinationId": "30450",
+                "description": "Sends federation events to SIEM",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "31015",
+                "sourceId": "30120",
+                "destinationId": "30040",
+                "description": "Creates federated user record",
+                "technology": "gRPC"
+              }
+            ]
+          },
+          {
+            "id": "30130",
+            "name": "Password Management",
+            "description": "Управление паролями",
+            "technology": "Go",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Go",
+              "structurizr.dsl.identifier": "iam.password_service"
+            },
+            "components": [
+              {
+                "id": "30131",
+                "name": "Password Reset Handler",
+                "description": "Сброс пароля",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.password.reset"
+                },
+                "relationships": [
+                  {
+                    "id": "30608",
+                    "sourceId": "30131",
+                    "destinationId": "30430",
+                    "description": "Sends reset OTP",
+                    "technology": "HTTPS/REST"
+                  }
+                ]
+              },
+              {
+                "id": "30132",
+                "name": "Password Policy Enforcer",
+                "description": "Политика паролей",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.password.policy"
+                },
+                "relationships": [
+                  {
+                    "id": "30609",
+                    "sourceId": "30132",
+                    "destinationId": "30075",
+                    "description": "Reads policy from DB",
+                    "technology": "JDBC"
+                  }
+                ]
+              },
+              {
+                "id": "30133",
+                "name": "Breach Check",
+                "description": "Проверка утечек паролей",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.password.breach"
+                },
+                "relationships": [
+                  {
+                    "id": "30610",
+                    "sourceId": "30133",
+                    "destinationId": "30470",
+                    "description": "Queries breach DB",
+                    "technology": "HTTPS/REST"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "30730",
+                "sourceId": "30130",
+                "destinationId": "30430",
+                "description": "Sends reset code via SMS",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "30731",
+                "sourceId": "30130",
+                "destinationId": "30030",
+                "description": "Updates LDAP password hash",
+                "technology": "LDAP"
+              },
+              {
+                "id": "30732",
+                "sourceId": "30130",
+                "destinationId": "30090",
+                "description": "Publishes password change events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "30733",
+                "sourceId": "30130",
+                "destinationId": "30075",
+                "description": "Reads/writes password policy",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30896",
+                "sourceId": "30130",
+                "destinationId": "30070",
+                "description": "Invalidates sessions on pwd reset",
+                "technology": "Redis"
+              },
+              {
+                "id": "30897",
+                "sourceId": "30130",
+                "destinationId": "30450",
+                "description": "Sends security event to SIEM",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "30898",
+                "sourceId": "30130",
+                "destinationId": "30496",
+                "description": "Reports password reset metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "31016",
+                "sourceId": "30130",
+                "destinationId": "30010",
+                "description": "Updates password in auth server",
+                "technology": "HTTPS"
+              }
+            ]
+          },
+          {
+            "id": "30140",
+            "name": "Consent & Privacy",
+            "description": "Управление согласиями GDPR/152-ФЗ",
+            "technology": "Go",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Go",
+              "structurizr.dsl.identifier": "iam.consent_privacy"
+            },
+            "components": [
+              {
+                "id": "30141",
+                "name": "Consent Store",
+                "description": "Хранение согласий",
+                "technology": "Go/PostgreSQL",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go/PostgreSQL",
+                  "structurizr.dsl.identifier": "iam.consent.store"
+                },
+                "relationships": [
+                  {
+                    "id": "30611",
+                    "sourceId": "30141",
+                    "destinationId": "30075",
+                    "description": "Persists consent records",
+                    "technology": "JDBC"
+                  }
+                ]
+              },
+              {
+                "id": "30142",
+                "name": "Consent API",
+                "description": "API управления согласиями",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.consent.api"
+                },
+                "relationships": [
+                  {
+                    "id": "30612",
+                    "sourceId": "30142",
+                    "destinationId": "30090",
+                    "description": "Publishes consent events",
+                    "technology": "Kafka"
+                  }
+                ]
+              },
+              {
+                "id": "30143",
+                "name": "Privacy Report Generator",
+                "description": "Генерация отчётов",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.consent.report_gen"
+                },
+                "relationships": []
+              }
+            ],
+            "relationships": [
+              {
+                "id": "30740",
+                "sourceId": "30140",
+                "destinationId": "30075",
+                "description": "Stores consent records",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30741",
+                "sourceId": "30140",
+                "destinationId": "30090",
+                "description": "Publishes consent events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "30742",
+                "sourceId": "30140",
+                "destinationId": "30480",
+                "description": "Sends GDPR reports",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "30899",
+                "sourceId": "30140",
+                "destinationId": "30460",
+                "description": "Syncs consent to AD attributes",
+                "technology": "LDAP"
+              },
+              {
+                "id": "30900",
+                "sourceId": "30140",
+                "destinationId": "30450",
+                "description": "Sends consent events to SIEM",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "30901",
+                "sourceId": "30140",
+                "destinationId": "30496",
+                "description": "Reports consent metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "31017",
+                "sourceId": "30140",
+                "destinationId": "30010",
+                "description": "Updates consent in auth server",
+                "technology": "gRPC"
+              }
+            ]
+          },
+          {
+            "id": "30150",
+            "name": "Key Management Service",
+            "description": "Управление криптографическими ключами",
+            "technology": "Go/HSM",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Go/HSM",
+              "structurizr.dsl.identifier": "iam.kms"
+            },
+            "components": [
+              {
+                "id": "30151",
+                "name": "Key Rotation Manager",
+                "description": "Ротация ключей JWT",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.kms.key_rotation"
+                },
+                "relationships": [
+                  {
+                    "id": "30613",
+                    "sourceId": "30151",
+                    "destinationId": "30090",
+                    "description": "Publishes key rotation events",
+                    "technology": "Kafka"
+                  }
+                ]
+              },
+              {
+                "id": "30152",
+                "name": "HSM Connector",
+                "description": "Интеграция с HSM",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.kms.hsm_connector"
+                },
+                "relationships": [
+                  {
+                    "id": "30614",
+                    "sourceId": "30152",
+                    "destinationId": "31075",
+                    "description": "Requests key operations",
+                    "technology": "PKCS#11"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "30750",
+                "sourceId": "30150",
+                "destinationId": "30090",
+                "description": "Publishes key rotation events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "30751",
+                "sourceId": "30150",
+                "destinationId": "30010",
+                "description": "Provides signing keys",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30752",
+                "sourceId": "30150",
+                "destinationId": "30095",
+                "description": "Provides public JWKS",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "30902",
+                "sourceId": "30150",
+                "destinationId": "30075",
+                "description": "Stores key metadata",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30903",
+                "sourceId": "30150",
+                "destinationId": "30450",
+                "description": "Sends key rotation events to SIEM",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "30904",
+                "sourceId": "30150",
+                "destinationId": "30496",
+                "description": "Reports KMS metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "31018",
+                "sourceId": "30150",
+                "destinationId": "30010a",
+                "description": "Publishes key rotation event",
+                "technology": "Kafka"
+              }
+            ]
+          },
+          {
+            "id": "30160",
+            "name": "Notification Service",
+            "description": "Уведомления IAM (email, SMS)",
+            "technology": "Go",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Go",
+              "structurizr.dsl.identifier": "iam.notification"
+            },
+            "components": [
+              {
+                "id": "30161",
+                "name": "Email Notifier",
+                "description": "Отправка email",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.notification.email"
+                },
+                "relationships": [
+                  {
+                    "id": "30615",
+                    "sourceId": "30161",
+                    "destinationId": "30490",
+                    "description": "Sends email via SMTP",
+                    "technology": "SMTP"
+                  }
+                ]
+              },
+              {
+                "id": "30162",
+                "name": "SMS Notifier",
+                "description": "Отправка SMS",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "iam.notification.sms"
+                },
+                "relationships": [
+                  {
+                    "id": "30616",
+                    "sourceId": "30162",
+                    "destinationId": "30430",
+                    "description": "Sends SMS OTP",
+                    "technology": "HTTPS/REST"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "30760",
+                "sourceId": "30160",
+                "destinationId": "30430",
+                "description": "Sends SMS notifications",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "30761",
+                "sourceId": "30160",
+                "destinationId": "30490",
+                "description": "Sends email notifications",
+                "technology": "SMTP"
+              },
+              {
+                "id": "30762",
+                "sourceId": "30160",
+                "destinationId": "30090",
+                "description": "Consumes notification events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "30905",
+                "sourceId": "30160",
+                "destinationId": "30070",
+                "description": "Reads notification state",
+                "technology": "Redis"
+              },
+              {
+                "id": "30906",
+                "sourceId": "30160",
+                "destinationId": "30075",
+                "description": "Persists notification history",
+                "technology": "JDBC"
+              },
+              {
+                "id": "30907",
+                "sourceId": "30160",
+                "destinationId": "30450",
+                "description": "Sends notification alerts to SIEM",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "30908",
+                "sourceId": "30160",
+                "destinationId": "30496",
+                "description": "Reports notification metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "31019",
+                "sourceId": "30160",
+                "destinationId": "30010",
+                "description": "Notifies auth server of delivery",
+                "technology": "gRPC"
+              }
+            ]
+          }
+        ],
+        "description": "IAM Platform — централизованная платформа управления идентификацией и доступом",
+        "id": "30010a",
+        "location": "Internal",
+        "name": "IAM Platform",
+        "properties": {
+          "structurizr.dsl.identifier": "iam",
+          "rps": 100000,
+          "error_rate": 0.005,
+          "latency": 50,
+          "technology": "Java/Go/Keycloak",
+          "cmdb": "IAM"
+        },
+        "relationships": [
+          {
+            "description": "Provides SSO tokens to CRM Platform",
+            "destinationId": "30410",
+            "id": "30500",
+            "sourceId": "30010a",
+            "technology": "OIDC"
+          },
+          {
+            "description": "Provides SSO tokens to OCS",
+            "destinationId": "30420",
+            "id": "30501",
+            "sourceId": "30010a",
+            "technology": "OIDC"
+          },
+          {
+            "description": "Sends OTP via SMS",
+            "destinationId": "30430",
+            "id": "30502",
+            "sourceId": "30010a",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "description": "Syncs user data with Active Directory",
+            "destinationId": "30460",
+            "id": "30503",
+            "sourceId": "30010a",
+            "technology": "LDAP"
+          },
+          {
+            "description": "Provisions users to downstream systems",
+            "destinationId": "30440",
+            "id": "30504",
+            "sourceId": "30010a",
+            "technology": "SCIM"
+          },
+          {
+            "description": "Sends security alerts",
+            "destinationId": "30450",
+            "id": "30505",
+            "sourceId": "30010a",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "id": "30800",
+            "sourceId": "30010a",
+            "destinationId": "30100",
+            "description": "Routes through API gateway",
+            "technology": "HTTPS"
+          },
+          {
+            "id": "30801",
+            "sourceId": "30010a",
+            "destinationId": "30470",
+            "description": "Checks breach DB",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "id": "30802",
+            "sourceId": "30010a",
+            "destinationId": "30480",
+            "description": "Sends compliance reports",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "id": "30803",
+            "sourceId": "30010a",
+            "destinationId": "30490",
+            "description": "Sends email notifications",
+            "technology": "SMTP"
+          },
+          {
+            "id": "30804",
+            "sourceId": "30010a",
+            "destinationId": "30496",
+            "description": "Pushes metrics",
+            "technology": "HTTP"
+          },
+          {
+            "id": "30909",
+            "sourceId": "30010a",
+            "destinationId": "30495",
+            "description": "Checks balance for premium features",
+            "technology": "gRPC"
+          },
+          {
+            "id": "30910",
+            "sourceId": "30010a",
+            "destinationId": "30497",
+            "description": "System monitoring alerts",
+            "technology": "SNMP/HTTP"
+          },
+          {
+            "id": "30911",
+            "sourceId": "30010a",
+            "destinationId": "30498",
+            "description": "Fetches service definitions",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "id": "31020",
+            "sourceId": "30010a",
+            "destinationId": "30100",
+            "description": "Routes external traffic via GW",
+            "technology": "HTTPS"
+          },
+          {
+            "id": "31021",
+            "sourceId": "30010a",
+            "destinationId": "30110",
+            "description": "Triggers provisioning",
+            "technology": "SCIM"
+          },
+          {
+            "id": "31022",
+            "sourceId": "30010a",
+            "destinationId": "30120",
+            "description": "Delegates federation",
+            "technology": "HTTPS/OIDC"
+          },
+          {
+            "id": "31023",
+            "sourceId": "30010a",
+            "destinationId": "30130",
+            "description": "Delegates password mgmt",
+            "technology": "HTTPS"
+          },
+          {
+            "id": "31024",
+            "sourceId": "30010a",
+            "destinationId": "30140",
+            "description": "Records consent",
+            "technology": "gRPC"
+          },
+          {
+            "id": "31025",
+            "sourceId": "30010a",
+            "destinationId": "30150",
+            "description": "Manages crypto keys",
+            "technology": "HTTPS"
+          },
+          {
+            "id": "31026",
+            "sourceId": "30010a",
+            "destinationId": "30160",
+            "description": "Sends notifications",
+            "technology": "gRPC"
+          }
+        ],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "CRM Platform — потребитель IAM SSO токенов",
+        "id": "30410",
+        "location": "Internal",
+        "name": "CRM Platform",
+        "properties": {
+          "structurizr.dsl.identifier": "crm_ext",
+          "rps": 15000,
+          "error_rate": 0.01,
+          "latency": 100,
+          "technology": "OIDC",
+          "cmdb": "CRM"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Online Charging System — потребитель IAM токенов для admin API",
+        "id": "30420",
+        "location": "Internal",
+        "name": "Online Charging System (OCS)",
+        "properties": {
+          "structurizr.dsl.identifier": "ocs_ext",
+          "rps": 50000,
+          "error_rate": 0.002,
+          "latency": 10,
+          "technology": "OIDC",
+          "cmdb": "OCS"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "SMS Gateway — для отправки OTP-кодов",
+        "id": "30430",
+        "location": "Internal",
+        "name": "SMS Gateway",
+        "properties": {
+          "structurizr.dsl.identifier": "sms_gw_ext",
+          "rps": 10000,
+          "error_rate": 0.02,
+          "latency": 80,
+          "technology": "HTTPS/REST",
+          "cmdb": "SMS_GW"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Целевые системы для SCIM-провизионирования учётных записей",
+        "id": "30440",
+        "location": "Internal",
+        "name": "Target Systems (SCIM)",
+        "properties": {
+          "structurizr.dsl.identifier": "scim_targets_ext",
+          "rps": 500,
+          "error_rate": 0.01,
+          "latency": 300,
+          "technology": "SCIM",
+          "cmdb": "SCIM_TARGETS"
+        },
+        "relationships": [
+          {
+            "id": "31028",
+            "sourceId": "30440",
+            "destinationId": "30110",
+            "description": "Receives provisioning updates",
+            "technology": "SCIM"
+          }
+        ],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Платформа наблюдаемости — SIEM и мониторинг безопасности",
+        "id": "30450",
+        "location": "Internal",
+        "name": "SIEM / Security Monitoring",
+        "properties": {
+          "structurizr.dsl.identifier": "siem_ext",
+          "rps": 50000,
+          "error_rate": 0.001,
+          "latency": 30,
+          "technology": "HTTPS/REST",
+          "cmdb": "SIEM"
+        },
+        "relationships": [
+          {
+            "id": "31029",
+            "sourceId": "30450",
+            "destinationId": "30093",
+            "description": "Sends SIEM events back",
+            "technology": "HTTPS/REST"
+          }
+        ],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Microsoft Active Directory — корпоративный каталог сотрудников",
+        "id": "30460",
+        "location": "Internal",
+        "name": "Microsoft Active Directory (AD)",
+        "properties": {
+          "structurizr.dsl.identifier": "ad_ext",
+          "rps": 5000,
+          "error_rate": 0.001,
+          "latency": 10,
+          "technology": "LDAP",
+          "cmdb": "AD"
+        },
+        "relationships": [
+          {
+            "id": "31027",
+            "sourceId": "30460",
+            "destinationId": "30030",
+            "description": "Syncs to LDAP directory",
+            "technology": "LDAP"
+          }
+        ],
+        "tags": "Element,Software System"
+      },
+      {
+        "id": "30470",
+        "name": "HaveIBeenPwned (Breach DB)",
+        "description": "База данных утечек паролей",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "HTTPS/REST",
+          "structurizr.dsl.identifier": "breach_db_ext",
+          "cmdb": "BREACH_DB"
+        },
+        "relationships": []
+      },
+      {
+        "id": "30480",
+        "name": "Regulatory Reporting",
+        "description": "Отчётность для регулятора (152-ФЗ)",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "HTTPS/REST",
+          "structurizr.dsl.identifier": "regulator_ext",
+          "cmdb": "REGULATOR"
+        },
+        "relationships": []
+      },
+      {
+        "id": "30490",
+        "name": "Email Relay (SMTP)",
+        "description": "SMTP-relay для email",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "SMTP",
+          "structurizr.dsl.identifier": "smtp_relay_ext",
+          "cmdb": "SMTP_RELAY"
+        },
+        "relationships": []
+      },
+      {
+        "id": "30495",
+        "name": "Unified Balance (UB)",
+        "description": "Unified Balance",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "gRPC",
+          "structurizr.dsl.identifier": "ub_iam_ext",
+          "cmdb": "UB_IAM"
+        },
+        "relationships": []
+      },
+      {
+        "id": "30496",
+        "name": "BeeInside (Observability)",
+        "description": "Prometheus/Grafana",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "Prometheus",
+          "structurizr.dsl.identifier": "beeinside_iam_ext",
+          "cmdb": "BEEINSIDE_IAM"
+        },
+        "relationships": []
+      },
+      {
+        "id": "30497",
+        "name": "Zabbix Monitoring",
+        "description": "Системный мониторинг IAM",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "SNMP/HTTP",
+          "structurizr.dsl.identifier": "zabbix_iam_ext",
+          "cmdb": "ZABBIX_IAM"
+        },
+        "relationships": []
+      },
+      {
+        "id": "30498",
+        "name": "BSS Service Catalog",
+        "description": "BSS Service Catalog",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "HTTPS/REST",
+          "structurizr.dsl.identifier": "bss_iam_ext",
+          "cmdb": "BSS_IAM"
+        },
+        "relationships": []
+      }
+    ],
+    "deploymentNodes": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "30010",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "31001",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "iam_prod.k8s.auth_node.auth_pod.auth_instance",
+                      "rps": 40000,
+                      "error_rate": 0.005,
+                      "latency": 50,
+                      "technology": "Docker"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Validates credentials",
+                        "destinationId": "31020",
+                        "id": "31100",
+                        "linkedRelationshipId": "30200",
+                        "sourceId": "31001",
+                        "technology": "LDAP"
+                      },
+                      {
+                        "description": "Stores session",
+                        "destinationId": "31030",
+                        "id": "31101",
+                        "linkedRelationshipId": "30201",
+                        "sourceId": "31001",
+                        "technology": "Redis"
+                      },
+                      {
+                        "description": "Verifies MFA",
+                        "destinationId": "31010",
+                        "id": "31102",
+                        "linkedRelationshipId": "30202",
+                        "sourceId": "31001",
+                        "technology": "HTTPS/REST"
+                      },
+                      {
+                        "description": "Fetches user attributes",
+                        "destinationId": "31015",
+                        "id": "31103",
+                        "linkedRelationshipId": "30203",
+                        "sourceId": "31001",
+                        "technology": "gRPC"
+                      },
+                      {
+                        "description": "Checks risk score",
+                        "destinationId": "31025",
+                        "id": "31104",
+                        "linkedRelationshipId": "30205",
+                        "sourceId": "31001",
+                        "technology": "gRPC"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "31000",
+                "instances": "1",
+                "name": "auth-server-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.auth_node.auth_pod",
+                  "image": "iam/authorization-server",
+                  "rps": 40000,
+                  "error_rate": 0.005,
+                  "latency": 50,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "30999",
+            "instances": "6",
+            "name": "auth-server-node",
+            "properties": {
+              "structurizr.dsl.identifier": "iam_prod.k8s.auth_node",
+              "flavor": "8cpu16ram",
+              "rps": 40000,
+              "error_rate": 0.005,
+              "latency": 50,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "30020",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "31010",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "iam_prod.k8s.mfa_node.mfa_pod.mfa_instance",
+                      "rps": 15000,
+                      "error_rate": 0.02,
+                      "latency": 200,
+                      "technology": "Docker"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Stores MFA devices",
+                        "destinationId": "31035",
+                        "id": "31105",
+                        "linkedRelationshipId": "30211",
+                        "sourceId": "31010",
+                        "technology": "JDBC"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "31009",
+                "instances": "1",
+                "name": "mfa-service-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.mfa_node.mfa_pod",
+                  "image": "iam/mfa-service",
+                  "rps": 15000,
+                  "error_rate": 0.02,
+                  "latency": 200,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "31008",
+            "instances": "3",
+            "name": "mfa-service-node",
+            "properties": {
+              "structurizr.dsl.identifier": "iam_prod.k8s.mfa_node",
+              "flavor": "4cpu8ram",
+              "rps": 15000,
+              "error_rate": 0.02,
+              "latency": 200,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "30030",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "31020",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.ldap_node.ldap_instance",
+                  "rps": 20000,
+                  "error_rate": 0.001,
+                  "latency": 5,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "31019",
+            "instances": "2",
+            "name": "ldap-node (Active Directory)",
+            "properties": {
+              "structurizr.dsl.identifier": "iam_prod.k8s.ldap_node",
+              "flavor": "8cpu16ram",
+              "rps": 20000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "30040",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "31015",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "iam_prod.k8s.userstore_node.userstore_pod.userstore_instance",
+                      "rps": 25000,
+                      "error_rate": 0.002,
+                      "latency": 10,
+                      "technology": "Docker"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Persists profiles",
+                        "destinationId": "31035",
+                        "id": "31106",
+                        "linkedRelationshipId": "30221",
+                        "sourceId": "31015",
+                        "technology": "JDBC"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "31014",
+                "instances": "1",
+                "name": "user-store-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.userstore_node.userstore_pod",
+                  "image": "iam/user-store",
+                  "rps": 25000,
+                  "error_rate": 0.002,
+                  "latency": 10,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "31013",
+            "instances": "3",
+            "name": "user-store-node",
+            "properties": {
+              "structurizr.dsl.identifier": "iam_prod.k8s.userstore_node",
+              "flavor": "8cpu16ram",
+              "rps": 25000,
+              "error_rate": 0.002,
+              "latency": 10,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "30060",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "31025",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.risk_node.risk_instance",
+                  "rps": 20000,
+                  "error_rate": 0.005,
+                  "latency": 25,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "31024",
+            "instances": "3",
+            "name": "risk-engine-node",
+            "properties": {
+              "structurizr.dsl.identifier": "iam_prod.k8s.risk_node",
+              "flavor": "8cpu16ram",
+              "image": "iam/risk-engine",
+              "rps": 20000,
+              "error_rate": 0.005,
+              "latency": 25,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "30070",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "31030",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.session_store_node.session_instance",
+                  "rps": 80000,
+                  "error_rate": 0.001,
+                  "latency": 1,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "31029",
+            "instances": "6",
+            "name": "session-store-node (Redis Cluster)",
+            "properties": {
+              "structurizr.dsl.identifier": "iam_prod.k8s.session_store_node",
+              "flavor": "8cpu32ram",
+              "image": "redis:7",
+              "rps": 80000,
+              "error_rate": 0.001,
+              "latency": 1,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "30075",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "31035",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.iam_db_node.iam_db_instance",
+                  "rps": 10000,
+                  "error_rate": 0.001,
+                  "latency": 5,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "31034",
+            "instances": "3",
+            "name": "iam-db-node (Patroni)",
+            "properties": {
+              "structurizr.dsl.identifier": "iam_prod.k8s.iam_db_node",
+              "flavor": "16cpu64ram",
+              "image": "postgres:14",
+              "rps": 10000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "30080",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "31040",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.audit_store_node.audit_instance",
+                  "rps": 50000,
+                  "error_rate": 0.001,
+                  "latency": 10,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "31039",
+            "instances": "3",
+            "name": "audit-log-node (Elasticsearch)",
+            "properties": {
+              "structurizr.dsl.identifier": "iam_prod.k8s.audit_store_node",
+              "flavor": "16cpu32ram",
+              "image": "elasticsearch:8",
+              "rps": 50000,
+              "error_rate": 0.001,
+              "latency": 10,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "30090",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "31045",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.kafka_node.kafka_instance",
+                  "rps": 60000,
+                  "error_rate": 0.0005,
+                  "latency": 5,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "31044",
+            "instances": "3",
+            "name": "kafka-node",
+            "properties": {
+              "structurizr.dsl.identifier": "iam_prod.k8s.kafka_node",
+              "flavor": "16cpu32ram",
+              "image": "bitnami/kafka",
+              "rps": 60000,
+              "error_rate": 0.0005,
+              "latency": 5,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "30093",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "31050",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "iam_prod.k8s.audit_proc_node.audit_proc_pod.audit_proc_instance",
+                      "rps": 60000,
+                      "error_rate": 0.002,
+                      "latency": 15,
+                      "technology": "Docker"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Writes to audit log",
+                        "destinationId": "31040",
+                        "id": "31107",
+                        "linkedRelationshipId": "30251",
+                        "sourceId": "31050",
+                        "technology": "HTTP"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "31049",
+                "instances": "1",
+                "name": "audit-processor-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.audit_proc_node.audit_proc_pod",
+                  "image": "iam/audit-processor",
+                  "rps": 60000,
+                  "error_rate": 0.002,
+                  "latency": 15,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "31048",
+            "instances": "3",
+            "name": "audit-processor-node",
+            "properties": {
+              "structurizr.dsl.identifier": "iam_prod.k8s.audit_proc_node",
+              "flavor": "4cpu8ram",
+              "rps": 60000,
+              "error_rate": 0.002,
+              "latency": 15,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "30095",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "31060",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "iam_prod.k8s.token_gw_node.token_gw_pod.token_gw_instance",
+                      "rps": 100000,
+                      "error_rate": 0.001,
+                      "latency": 5,
+                      "technology": "Docker"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Validates session",
+                        "destinationId": "31030",
+                        "id": "31108",
+                        "linkedRelationshipId": "30260",
+                        "sourceId": "31060",
+                        "technology": "Redis"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "31059",
+                "instances": "1",
+                "name": "token-gateway-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.token_gw_node.token_gw_pod",
+                  "image": "iam/token-gateway",
+                  "rps": 100000,
+                  "error_rate": 0.001,
+                  "latency": 5,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "31058",
+            "instances": "8",
+            "name": "token-gateway-node",
+            "properties": {
+              "structurizr.dsl.identifier": "iam_prod.k8s.token_gw_node",
+              "flavor": "4cpu8ram",
+              "rps": 100000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "infrastructureNodes": [
+              {
+                "description": "WAF для защиты IAM endpoints",
+                "environment": "Production",
+                "id": "31070",
+                "name": "IAM WAF",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.infra.iam_waf",
+                  "rps": 100000,
+                  "error_rate": 0.003,
+                  "latency": 3,
+                  "technology": "WAF"
+                },
+                "relationships": [
+                  {
+                    "description": "Forwards authenticated requests to Auth Server",
+                    "destinationId": "31001",
+                    "id": "31109",
+                    "sourceId": "31070",
+                    "technology": "HTTPS"
+                  },
+                  {
+                    "description": "Forwards token validation requests",
+                    "destinationId": "31060",
+                    "id": "31110",
+                    "sourceId": "31070",
+                    "technology": "HTTPS"
+                  }
+                ],
+                "tags": "Element,Infrastructure Node",
+                "technology": "WAF"
+              },
+              {
+                "description": "HSM — Hardware Security Module для хранения ключей подписи JWT",
+                "environment": "Production",
+                "id": "31075",
+                "name": "HSM (Hardware Security Module)",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.infra.hsm",
+                  "rps": 1000,
+                  "error_rate": 0.0001,
+                  "latency": 2,
+                  "technology": "PKCS#11"
+                },
+                "relationships": [],
+                "tags": "Element,Infrastructure Node",
+                "technology": "PKCS#11"
+              },
+              {
+                "description": "Ingress Controller для IAM",
+                "environment": "Production",
+                "id": "31076",
+                "name": "IAM Nginx Ingress",
+                "properties": {
+                  "structurizr.dsl.identifier": "iam_prod.k8s.infra.iam_ingress",
+                  "rps": 100000,
+                  "error_rate": 0.001,
+                  "latency": 1,
+                  "technology": "Nginx"
+                },
+                "relationships": [],
+                "tags": "Element,Infrastructure Node",
+                "technology": "Nginx"
+              },
+              {
+                "id": "31077",
+                "name": "IAM Prometheus Pushgateway",
+                "description": "Prometheus PushGateway IAM",
+                "technology": "Prometheus",
+                "environment": "Production",
+                "tags": "Element,Infrastructure Node",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.002,
+                  "latency": 3,
+                  "technology": "Prometheus",
+                  "structurizr.dsl.identifier": "iam_prod.k8s.infra.pushgw"
+                },
+                "relationships": []
+              },
+              {
+                "id": "31078",
+                "name": "IAM Istio Service Mesh",
+                "description": "Istio sidecar IAM",
+                "technology": "Istio",
+                "environment": "Production",
+                "tags": "Element,Infrastructure Node",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.002,
+                  "latency": 3,
+                  "technology": "Istio",
+                  "structurizr.dsl.identifier": "iam_prod.k8s.infra.istio"
+                },
+                "relationships": []
+              },
+              {
+                "id": "31079",
+                "name": "IAM Rate Limit Policy",
+                "description": "Global rate limit policy",
+                "technology": "Envoy",
+                "environment": "Production",
+                "tags": "Element,Infrastructure Node",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.002,
+                  "latency": 3,
+                  "technology": "Envoy",
+                  "structurizr.dsl.identifier": "iam_prod.k8s.infra.rate_limit"
+                },
+                "relationships": []
+              }
+            ],
+            "environment": "Production",
+            "id": "31069",
+            "instances": "1",
+            "name": "IAM Infrastructure",
+            "properties": {
+              "structurizr.dsl.identifier": "iam_prod.k8s.infra",
+              "rps": 100000,
+              "error_rate": 0.001,
+              "latency": 1,
+              "technology": "Kubernetes"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "id": "31080",
+            "name": "api-gateway-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "4",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "iam_prod.k8s.api_gw_node",
+              "flavor": "8cpu16ram"
+            },
+            "children": [
+              {
+                "id": "31081",
+                "name": "api-gateway-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "iam_prod.k8s.api_gw_node.pod",
+                  "image": "kong/kong-gateway"
+                },
+                "containerInstances": [
+                  {
+                    "id": "31082",
+                    "containerId": "30100",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 100000,
+                      "error_rate": 0.001,
+                      "latency": 3,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_31082"
+                    },
+                    "relationships": [
+                      {
+                        "id": "31200",
+                        "sourceId": "31082",
+                        "destinationId": "31001",
+                        "description": "Forwards auth request",
+                        "technology": "HTTPS",
+                        "linkedRelationshipId": "30700"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "31090",
+            "name": "provisioning-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "2",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "iam_prod.k8s.provisioning_node",
+              "flavor": "4cpu8ram"
+            },
+            "children": [
+              {
+                "id": "31091",
+                "name": "provisioning-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "iam_prod.k8s.provisioning_node.pod",
+                  "image": "iam/provisioning-service"
+                },
+                "containerInstances": [
+                  {
+                    "id": "31092",
+                    "containerId": "30110",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 500,
+                      "error_rate": 0.01,
+                      "latency": 200,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_31092"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "31100",
+            "name": "federation-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "2",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "iam_prod.k8s.federation_node",
+              "flavor": "4cpu8ram"
+            },
+            "children": [
+              {
+                "id": "31101",
+                "name": "federation-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "iam_prod.k8s.federation_node.pod",
+                  "image": "iam/federation-service"
+                },
+                "containerInstances": [
+                  {
+                    "id": "31102",
+                    "containerId": "30120",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 2000,
+                      "error_rate": 0.01,
+                      "latency": 100,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_31102"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "31110",
+            "name": "password-mgmt-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "2",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "iam_prod.k8s.password_node",
+              "flavor": "4cpu8ram"
+            },
+            "children": [
+              {
+                "id": "31111",
+                "name": "password-mgmt-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "iam_prod.k8s.password_node.pod",
+                  "image": "iam/password-service"
+                },
+                "containerInstances": [
+                  {
+                    "id": "31112",
+                    "containerId": "30130",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 1000,
+                      "error_rate": 0.02,
+                      "latency": 300,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_31112"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "31120",
+            "name": "consent-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "2",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "iam_prod.k8s.consent_node",
+              "flavor": "4cpu8ram"
+            },
+            "children": [
+              {
+                "id": "31121",
+                "name": "consent-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "iam_prod.k8s.consent_node.pod",
+                  "image": "iam/consent-service"
+                },
+                "containerInstances": [
+                  {
+                    "id": "31122",
+                    "containerId": "30140",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 500,
+                      "error_rate": 0.005,
+                      "latency": 50,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_31122"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "31130",
+            "name": "kms-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "3",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "iam_prod.k8s.kms_node",
+              "flavor": "8cpu16ram"
+            },
+            "children": [
+              {
+                "id": "31131",
+                "name": "kms-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "iam_prod.k8s.kms_node.pod",
+                  "image": "iam/key-management"
+                },
+                "containerInstances": [
+                  {
+                    "id": "31132",
+                    "containerId": "30150",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 1000,
+                      "error_rate": 0.0001,
+                      "latency": 2,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_31132"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "31140",
+            "name": "notification-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "3",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "iam_prod.k8s.notification_node",
+              "flavor": "4cpu8ram"
+            },
+            "children": [
+              {
+                "id": "31141",
+                "name": "notification-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "iam_prod.k8s.notification_node.pod",
+                  "image": "iam/notification-service"
+                },
+                "containerInstances": [
+                  {
+                    "id": "31142",
+                    "containerId": "30160",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 5000,
+                      "error_rate": 0.02,
+                      "latency": 200,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_31142"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "environment": "Production",
+        "id": "30998",
+        "instances": "1",
+        "name": "IAM Kubernetes Cluster",
+        "properties": {
+          "structurizr.dsl.identifier": "iam_prod.k8s",
+          "rps": 100000,
+          "error_rate": 0.005,
+          "latency": 5,
+          "technology": "Kubernetes"
+        },
+        "tags": "Element,Deployment Node",
+        "technology": "Kubernetes"
+      },
+      {
+        "environment": "Production",
+        "id": "30997",
+        "instances": "1",
+        "name": "IAM Production Platform",
+        "properties": {
+          "structurizr.dsl.identifier": "iam_prod",
+          "rps": 100000,
+          "error_rate": 0.005,
+          "latency": 3,
+          "technology": "OpenStack"
+        },
+        "tags": "Element,Deployment Node",
+        "technology": "OpenStack",
+        "children": []
+      }
+    ]
+  },
+  "name": "IAM",
+  "views": {
+    "configuration": {
+      "styles": {
+        "elements": [],
+        "relationships": []
+      }
+    }
+  }
+}

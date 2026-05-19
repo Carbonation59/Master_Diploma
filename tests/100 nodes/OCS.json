@@ -1,0 +1,3793 @@
+{
+  "configuration": {},
+  "description": "Online Charging System — система онлайн-тарификации и управления ресурсами",
+  "documentation": {
+    "decisions": [
+      {
+        "content": "# ADR 001 Выбор протокола взаимодействия с сетевыми узлами\n\n## Status\nAccepted\n\n## Context\nOCS должна получать события потребления от узлов сети (GGSN, P-GW, IMS) и выполнять онлайн-тарификацию. Необходимо определить протокол.\n\n## Decision\nИспользовать протокол Diameter Ro/Gy для онлайн-тарификации данных и голоса. Для legacy-узлов поддержать RADIUS.\n\n## Consequences\nТребуется реализация Diameter Routing Agent для балансировки сессий.",
+        "date": "2024-01-15T10:00:00Z",
+        "format": "Markdown",
+        "id": "1",
+        "status": "Accepted",
+        "title": "ADR 001 Выбор протокола взаимодействия с сетевыми узлами"
+      },
+      {
+        "content": "# ADR 002 Архитектура хранилища сессий\n\n## Status\nAccepted\n\n## Context\nДля хранения активных сессий тарификации необходимо выбрать хранилище с низкой задержкой.\n\n## Decision\nИспользовать in-memory хранилище на базе Tarantool для хранения активных сессий. Для холодного хранилища использовать PostgreSQL.\n\n## Consequences\nНеобходимо организовать репликацию и failover для Tarantool-кластера.",
+        "date": "2024-02-01T10:00:00Z",
+        "format": "Markdown",
+        "id": "2",
+        "status": "Accepted",
+        "title": "ADR 002 Архитектура хранилища сессий"
+      }
+    ],
+    "sections": [
+      {
+        "content": "## Введение\n\nОнлайн-система тарификации (OCS) обеспечивает real-time контроль и тарификацию потребления услуг абонентами сети. Система поддерживает голосовые, SMS и data-услуги.\n\n### Ключевые функции\n- Онлайн-тарификация по протоколам Diameter Ro/Gy\n- Управление квотами и резервированием ресурсов\n- Интеграция с Balance Manager для списания средств\n- Поддержка конвергентных тарифных планов",
+        "filename": "01_main.md",
+        "format": "Markdown",
+        "order": 1,
+        "title": ""
+      },
+      {
+        "content": "## HLD\n\n### Контекстная диаграмма\n![](embed:context)\n",
+        "filename": "02_HLD.md",
+        "format": "Markdown",
+        "order": 2,
+        "title": ""
+      },
+      {
+        "content": "### Контейнерная диаграмма\n![](embed:containers)\n",
+        "filename": "03_containers.md",
+        "format": "Markdown",
+        "order": 3,
+        "title": ""
+      },
+      {
+        "content": "### Deployment диаграмма\n![](embed:Production-01)\n",
+        "filename": "04_deployment.md",
+        "format": "Markdown",
+        "order": 4,
+        "title": ""
+      }
+    ]
+  },
+  "id": 600000001,
+  "lastModifiedAgent": "structurizr-cli/",
+  "lastModifiedDate": "2025-05-18T10:00:00Z",
+  "lastModifiedUser": "architect@beeline.ru",
+  "model": {
+    "properties": {
+      "structurizr.groupSeparator": "/",
+      "workspace_cmdb": "OCS",
+      "architect": "Иванов Алексей Петрович <APivanov@beeline.ru>"
+    },
+    "people": [
+      {
+        "description": "Сетевые узлы, инициирующие запросы на тарификацию",
+        "id": "10001",
+        "location": "External",
+        "name": "Network Node (GGSN/P-GW/IMS)",
+        "properties": {
+          "structurizr.dsl.identifier": "network_node",
+          "rps": 50000,
+          "error_rate": 0.001,
+          "latency": 5,
+          "technology": "Diameter"
+        },
+        "relationships": [
+          {
+            "description": "Sends Diameter CCR (Credit-Control-Request)",
+            "destinationId": "10020",
+            "id": "10100",
+            "sourceId": "10001",
+            "tags": "Relationship",
+            "technology": "Diameter Ro/Gy"
+          }
+        ],
+        "tags": "Element,Person"
+      },
+      {
+        "description": "Оператор тарификационной платформы",
+        "id": "10002",
+        "location": "Internal",
+        "name": "OCS Administrator",
+        "properties": {
+          "structurizr.dsl.identifier": "ocs_admin",
+          "rps": 2,
+          "error_rate": 0.005,
+          "latency": 300,
+          "technology": "HTTPS"
+        },
+        "relationships": [
+          {
+            "description": "Configures tariff plans and quotas",
+            "destinationId": "10030",
+            "id": "10101",
+            "sourceId": "10002",
+            "tags": "Relationship",
+            "technology": "HTTPS"
+          }
+        ],
+        "tags": "Element,Person"
+      }
+    ],
+    "softwareSystems": [
+      {
+        "containers": [
+          {
+            "components": [
+              {
+                "description": "Обработка Diameter CCR/CCA сообщений",
+                "id": "10041",
+                "name": "Diameter CCR Handler",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.diameter_gateway.ccr_handler",
+                  "rps": 50000,
+                  "error_rate": 0.001,
+                  "latency": 2,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Forwards rating request",
+                    "destinationId": "10050",
+                    "id": "10150",
+                    "sourceId": "10041",
+                    "technology": "gRPC"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Управление Diameter-сессиями",
+                "id": "10042",
+                "name": "Session Manager",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.diameter_gateway.session_manager",
+                  "rps": 50000,
+                  "error_rate": 0.001,
+                  "latency": 3,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Stores session state",
+                    "destinationId": "10070",
+                    "id": "10151",
+                    "sourceId": "10042",
+                    "technology": "RPC"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Маршрутизация Diameter-сообщений",
+                "id": "10043",
+                "name": "Diameter Router",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.diameter_gateway.router",
+                  "rps": 50000,
+                  "error_rate": 0.0005,
+                  "latency": 1,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Точка входа Diameter Ro/Gy/Sy трафика",
+            "id": "10040",
+            "name": "Diameter Gateway",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.diameter_gateway",
+              "rps": 50000,
+              "error_rate": 0.001,
+              "latency": 3,
+              "technology": "Go"
+            },
+            "relationships": [
+              {
+                "description": "Forwards rating request to Rating Engine",
+                "destinationId": "10050",
+                "id": "10200",
+                "sourceId": "10040",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Stores active sessions",
+                "destinationId": "10070",
+                "id": "10201",
+                "sourceId": "10040",
+                "technology": "RPC"
+              },
+              {
+                "description": "Publishes CDR events",
+                "destinationId": "10090",
+                "id": "10202",
+                "sourceId": "10040",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Gets policy from PCRF",
+                "destinationId": "10410",
+                "id": "10630",
+                "sourceId": "10040",
+                "technology": "Diameter Gx"
+              },
+              {
+                "description": "Subscriber lookup from HLR",
+                "destinationId": "10420",
+                "id": "10631",
+                "sourceId": "10040",
+                "technology": "MAP"
+              },
+              {
+                "id": "10830",
+                "sourceId": "10040",
+                "destinationId": "10270",
+                "description": "Uses CB proxy for balance",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "10831",
+                "sourceId": "10040",
+                "destinationId": "10250",
+                "description": "Gets policy from cache",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10928",
+                "sourceId": "10040",
+                "destinationId": "10230",
+                "description": "Forwards RADIUS sessions",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10929",
+                "sourceId": "10040",
+                "destinationId": "10210",
+                "description": "Reads gateway config",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10930",
+                "sourceId": "10040",
+                "destinationId": "10440",
+                "description": "Sends gateway metrics",
+                "technology": "SNMP/HTTP"
+              },
+              {
+                "id": "11001",
+                "sourceId": "10040",
+                "destinationId": "10050",
+                "description": "Forwards rating request (sync)",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11002",
+                "sourceId": "10040",
+                "destinationId": "10160",
+                "description": "Sends IEC reserve request",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11003",
+                "sourceId": "10040",
+                "destinationId": "10200",
+                "description": "Forwards for fraud check",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11004",
+                "sourceId": "10040",
+                "destinationId": "10180",
+                "description": "Enriches subscriber data",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11005",
+                "sourceId": "10040",
+                "destinationId": "10190",
+                "description": "Sends CDR to analytics",
+                "technology": "Kafka"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go"
+          },
+          {
+            "components": [
+              {
+                "description": "Применение тарифных правил к событию потребления",
+                "id": "10051",
+                "name": "Tariff Engine",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.rating_engine.tariff_engine",
+                  "rps": 45000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Lua/Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Fetches tariff plan",
+                    "destinationId": "10080",
+                    "id": "10152",
+                    "sourceId": "10051",
+                    "technology": "gRPC"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Lua/Go"
+              },
+              {
+                "description": "Расчет стоимости события",
+                "id": "10052",
+                "name": "Cost Calculator",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.rating_engine.cost_calc",
+                  "rps": 45000,
+                  "error_rate": 0.002,
+                  "latency": 4,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Deducts balance",
+                    "destinationId": "10130",
+                    "id": "10153",
+                    "sourceId": "10052",
+                    "technology": "HTTPS/REST"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Управление квотами абонента",
+                "id": "10053",
+                "name": "Quota Manager",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.rating_engine.quota_manager",
+                  "rps": 40000,
+                  "error_rate": 0.003,
+                  "latency": 5,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Reserves quota in session store",
+                    "destinationId": "10070",
+                    "id": "10154",
+                    "sourceId": "10053",
+                    "technology": "RPC"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Движок тарификации — расчёт стоимости событий потребления в реальном времени",
+            "id": "10050",
+            "name": "Rating Engine",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.rating_engine",
+              "rps": 45000,
+              "error_rate": 0.002,
+              "latency": 8,
+              "technology": "Go/Lua"
+            },
+            "relationships": [
+              {
+                "description": "Deducts subscriber balance",
+                "destinationId": "10130",
+                "id": "10210",
+                "sourceId": "10050",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Fetches tariff plan data",
+                "destinationId": "10080",
+                "id": "10211",
+                "sourceId": "10050",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Fetches subscriber profile",
+                "destinationId": "10110",
+                "id": "10212",
+                "sourceId": "10050",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Publishes rated CDR",
+                "destinationId": "10090",
+                "id": "10213",
+                "sourceId": "10050",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Reserves balance before charging",
+                "destinationId": "10160",
+                "id": "10620",
+                "sourceId": "10050",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Checks fraud",
+                "destinationId": "10200",
+                "id": "10621",
+                "sourceId": "10050",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Enriches subscriber data",
+                "destinationId": "10180",
+                "id": "10622",
+                "sourceId": "10050",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Deducts from UB for prepaid new gen",
+                "destinationId": "10400",
+                "id": "10623",
+                "sourceId": "10050",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10813",
+                "sourceId": "10050",
+                "destinationId": "10500",
+                "description": "Updates QoS policy",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10820",
+                "sourceId": "10050",
+                "destinationId": "10460",
+                "description": "Fetches service details",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10821",
+                "sourceId": "10050",
+                "destinationId": "10250",
+                "description": "Gets cached policy",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10822",
+                "sourceId": "10050",
+                "destinationId": "10270",
+                "description": "Uses CB proxy for BM",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "10931",
+                "sourceId": "10050",
+                "destinationId": "10180",
+                "description": "Enriches rating data",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10932",
+                "sourceId": "10050",
+                "destinationId": "10200",
+                "description": "Checks fraud before rating",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10933",
+                "sourceId": "10050",
+                "destinationId": "10210",
+                "description": "Reads tariff config",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10934",
+                "sourceId": "10050",
+                "destinationId": "10230",
+                "description": "Receives RADIUS events",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11006",
+                "sourceId": "10050",
+                "destinationId": "10160",
+                "description": "Requests IEC reservation",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11007",
+                "sourceId": "10050",
+                "destinationId": "10440",
+                "description": "Reports rating errors",
+                "technology": "SNMP/HTTP"
+              },
+              {
+                "id": "11008",
+                "sourceId": "10050",
+                "destinationId": "10495",
+                "description": "Applies voucher discount",
+                "technology": "HTTPS/REST"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go/Lua"
+          },
+          {
+            "components": [
+              {
+                "description": "REST API для управления конфигурацией тарифов",
+                "id": "10031",
+                "name": "Config REST API",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.admin_portal.config_api",
+                  "rps": 20,
+                  "error_rate": 0.01,
+                  "latency": 100,
+                  "technology": "HTTPS/REST"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Веб-интерфейс администратора",
+                "id": "10032",
+                "name": "Admin UI",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.admin_portal.admin_ui",
+                  "rps": 5,
+                  "error_rate": 0.02,
+                  "latency": 200,
+                  "technology": "HTTPS"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "React"
+              }
+            ],
+            "description": "Портал управления конфигурацией OCS: тарифы, правила, пороги",
+            "id": "10030",
+            "name": "Admin Portal",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.admin_portal",
+              "rps": 10,
+              "error_rate": 0.01,
+              "latency": 150,
+              "technology": "HTTPS"
+            },
+            "relationships": [
+              {
+                "description": "Writes tariff configuration",
+                "destinationId": "10080",
+                "id": "10220",
+                "sourceId": "10030",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Manages subscriber quotas",
+                "destinationId": "10070",
+                "id": "10221",
+                "sourceId": "10030",
+                "technology": "RPC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "React/Go"
+          },
+          {
+            "description": "Хранилище активных сессий тарификации (in-memory)",
+            "id": "10070",
+            "name": "Session Store",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.session_store",
+              "rps": 120000,
+              "error_rate": 0.0001,
+              "latency": 1,
+              "technology": "Tarantool"
+            },
+            "relationships": [
+              {
+                "id": "11011",
+                "sourceId": "10070",
+                "destinationId": "10050",
+                "description": "Provides session data to rating",
+                "technology": "RPC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Tarantool"
+          },
+          {
+            "description": "Хранилище тарифных планов и правил тарификации",
+            "id": "10080",
+            "name": "Tariff Catalog",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.tariff_catalog",
+              "rps": 5000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "PostgreSQL/gRPC"
+            },
+            "relationships": [
+              {
+                "id": "10945",
+                "sourceId": "10080",
+                "destinationId": "10210",
+                "description": "Reads config",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11012",
+                "sourceId": "10080",
+                "destinationId": "10360",
+                "description": "Reports tariff query metrics",
+                "technology": "HTTP"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "PostgreSQL/gRPC"
+          },
+          {
+            "description": "Брокер событий для CDR и уведомлений о порогах",
+            "id": "10090",
+            "name": "Event Bus",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.event_bus",
+              "rps": 60000,
+              "error_rate": 0.0005,
+              "latency": 5,
+              "technology": "Kafka"
+            },
+            "relationships": [
+              {
+                "id": "10943",
+                "sourceId": "10090",
+                "destinationId": "10140",
+                "description": "Relays CDR to billing",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10944",
+                "sourceId": "10090",
+                "destinationId": "10360",
+                "description": "Sends metrics events",
+                "technology": "HTTP"
+              },
+              {
+                "id": "11013",
+                "sourceId": "10090",
+                "destinationId": "10200",
+                "description": "Routes fraud alert",
+                "technology": "Kafka"
+              },
+              {
+                "id": "11014",
+                "sourceId": "10090",
+                "destinationId": "10250",
+                "description": "Notifies policy cache",
+                "technology": "Kafka"
+              },
+              {
+                "id": "11015",
+                "sourceId": "10090",
+                "destinationId": "10240",
+                "description": "Sends CDR to reconciliation",
+                "technology": "Kafka"
+              },
+              {
+                "id": "11016",
+                "sourceId": "10090",
+                "destinationId": "10480",
+                "description": "Sends NE events",
+                "technology": "SNMP/REST"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Kafka"
+          },
+          {
+            "components": [
+              {
+                "description": "Парсер и обогащение CDR данными абонента",
+                "id": "10061",
+                "name": "CDR Enricher",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.cdr_processor.enricher",
+                  "rps": 30000,
+                  "error_rate": 0.005,
+                  "latency": 15,
+                  "technology": "Java"
+                },
+                "relationships": [
+                  {
+                    "description": "Sends enriched CDR to billing",
+                    "destinationId": "10140",
+                    "id": "10155",
+                    "sourceId": "10061",
+                    "technology": "Kafka"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Java"
+              },
+              {
+                "description": "Дедупликация CDR-записей",
+                "id": "10062",
+                "name": "CDR Deduplicator",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.cdr_processor.deduplicator",
+                  "rps": 30000,
+                  "error_rate": 0.001,
+                  "latency": 3,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Обработчик CDR-записей — обогащение, дедупликация, маршрутизация",
+            "id": "10060",
+            "name": "CDR Processor",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.cdr_processor",
+              "rps": 30000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Java/Go"
+            },
+            "relationships": [
+              {
+                "description": "Consumes CDR events",
+                "destinationId": "10090",
+                "id": "10230",
+                "sourceId": "10060",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Sends enriched CDR to Billing",
+                "destinationId": "10140",
+                "id": "10231",
+                "sourceId": "10060",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Sends CDR for mediation",
+                "destinationId": "10120",
+                "id": "10232",
+                "sourceId": "10060",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Sends CDR to UB for balance reconciliation",
+                "destinationId": "10400",
+                "id": "10650",
+                "sourceId": "10060",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Sends fraud CDR to Anti-Fraud",
+                "destinationId": "10430",
+                "id": "10651",
+                "sourceId": "10060",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10815",
+                "sourceId": "10060",
+                "destinationId": "10470",
+                "description": "Sends CDR archive",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10832",
+                "sourceId": "10060",
+                "destinationId": "10490",
+                "description": "Sends interconnect CDR",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10908",
+                "sourceId": "10060",
+                "destinationId": "10110",
+                "description": "Enriches CDR with profile",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10909",
+                "sourceId": "10060",
+                "destinationId": "10240",
+                "description": "Sends CDR for reconciliation",
+                "technology": "Kafka"
+              },
+              {
+                "id": "11009",
+                "sourceId": "10060",
+                "destinationId": "10080",
+                "description": "Reads tariff for CDR enrichment",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11010",
+                "sourceId": "10060",
+                "destinationId": "10160",
+                "description": "Sends post-paid CDR to reserve",
+                "technology": "gRPC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Java/Go"
+          },
+          {
+            "description": "Сервис профилей абонентов OCS (кэш данных из UCP)",
+            "id": "10110",
+            "name": "Subscriber Profile Cache",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.subscriber_profile_cache",
+              "rps": 80000,
+              "error_rate": 0.002,
+              "latency": 2,
+              "technology": "Redis/Go"
+            },
+            "relationships": [
+              {
+                "description": "Fetches subscriber data on cache miss",
+                "destinationId": "10310",
+                "id": "10240",
+                "sourceId": "10110",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10926",
+                "sourceId": "10110",
+                "destinationId": "10420",
+                "description": "Fetches MSISDN from HLR",
+                "technology": "MAP"
+              },
+              {
+                "id": "10927",
+                "sourceId": "10110",
+                "destinationId": "10370",
+                "description": "Queries through DRA",
+                "technology": "Diameter"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Redis/Go"
+          },
+          {
+            "components": [
+              {
+                "description": "Обработчик уведомлений о низком балансе",
+                "id": "10021",
+                "name": "Threshold Notification Handler",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.notification_service.threshold_handler",
+                  "rps": 5000,
+                  "error_rate": 0.01,
+                  "latency": 50,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Sends SMS notification",
+                    "destinationId": "10320",
+                    "id": "10156",
+                    "sourceId": "10021",
+                    "technology": "HTTPS/REST"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Генератор уведомлений об исчерпании квоты",
+                "id": "10022",
+                "name": "Quota Exhaustion Notifier",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.notification_service.quota_notifier",
+                  "rps": 3000,
+                  "error_rate": 0.01,
+                  "latency": 30,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Сервис уведомлений о порогах баланса и исчерпании квот",
+            "id": "10020",
+            "name": "Notification Service",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.notification_service",
+              "rps": 5000,
+              "error_rate": 0.01,
+              "latency": 40,
+              "technology": "Go"
+            },
+            "relationships": [
+              {
+                "description": "Consumes threshold events",
+                "destinationId": "10090",
+                "id": "10250",
+                "sourceId": "10020",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Sends notification via SMS platform",
+                "destinationId": "10320",
+                "id": "10251",
+                "sourceId": "10020",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Sends balance threshold event to BeeInside",
+                "destinationId": "10360",
+                "id": "10640",
+                "sourceId": "10020",
+                "technology": "HTTP"
+              },
+              {
+                "id": "10833",
+                "sourceId": "10020",
+                "destinationId": "10360",
+                "description": "Pushes notification metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "10921",
+                "sourceId": "10020",
+                "destinationId": "10110",
+                "description": "Fetches subscriber contact",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10922",
+                "sourceId": "10020",
+                "destinationId": "10095",
+                "description": "Pushes notification metrics",
+                "technology": "Prometheus"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go"
+          },
+          {
+            "description": "Экспортер метрик Prometheus для мониторинга OCS",
+            "id": "10095",
+            "name": "Metrics Exporter",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.metrics_exporter",
+              "rps": 100,
+              "error_rate": 0.001,
+              "latency": 10,
+              "technology": "Prometheus"
+            },
+            "relationships": [
+              {
+                "description": "Pushes metrics",
+                "destinationId": "10360",
+                "id": "10260",
+                "sourceId": "10095",
+                "technology": "HTTP"
+              },
+              {
+                "id": "10946",
+                "sourceId": "10095",
+                "destinationId": "10090",
+                "description": "Reads event counts",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10947",
+                "sourceId": "10095",
+                "destinationId": "10440",
+                "description": "Reports to Zabbix",
+                "technology": "SNMP/HTTP"
+              },
+              {
+                "id": "11037",
+                "sourceId": "10095",
+                "destinationId": "10050",
+                "description": "Reads rating perf metrics",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11038",
+                "sourceId": "10095",
+                "destinationId": "10040",
+                "description": "Reads gateway metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "11039",
+                "sourceId": "10095",
+                "destinationId": "10160",
+                "description": "Reads reserve metrics",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11040",
+                "sourceId": "10095",
+                "destinationId": "10200",
+                "description": "Reads fraud metrics",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11041",
+                "sourceId": "10095",
+                "destinationId": "10180",
+                "description": "Reads enrichment metrics",
+                "technology": "gRPC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Prometheus"
+          },
+          {
+            "components": [
+              {
+                "description": "Агент резервирования ресурсов перед списанием",
+                "id": "10170",
+                "name": "Reserve Agent",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.reserve_service.reserve_agent",
+                  "rps": 20000,
+                  "error_rate": 0.003,
+                  "latency": 8,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Locks quota in session store",
+                    "destinationId": "10070",
+                    "id": "10560",
+                    "sourceId": "10170",
+                    "technology": "RPC"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Подтверждение и освобождение резервов",
+                "id": "10171",
+                "name": "Commit/Release Agent",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.reserve_service.commit_agent",
+                  "rps": 20000,
+                  "error_rate": 0.003,
+                  "latency": 6,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Updates balance",
+                    "destinationId": "10131",
+                    "id": "10561",
+                    "sourceId": "10171",
+                    "technology": "HTTPS/REST"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Сервис резервирования ресурсов (IEC — Immediate Event Charging)",
+            "id": "10160",
+            "name": "Reserve & Commit Service",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.reserve_service",
+              "rps": 20000,
+              "error_rate": 0.003,
+              "latency": 10,
+              "technology": "Go"
+            },
+            "relationships": [
+              {
+                "description": "Reserves balance before deduction",
+                "destinationId": "10130",
+                "id": "10570",
+                "sourceId": "10160",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Updates quota in session store",
+                "destinationId": "10070",
+                "id": "10571",
+                "sourceId": "10160",
+                "technology": "RPC"
+              },
+              {
+                "id": "10912",
+                "sourceId": "10160",
+                "destinationId": "10220",
+                "description": "Routes via internal LB",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10913",
+                "sourceId": "10160",
+                "destinationId": "10180",
+                "description": "Enriches before reserve",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11017",
+                "sourceId": "10160",
+                "destinationId": "10410",
+                "description": "Requests quota from PCRF",
+                "technology": "Diameter Sy"
+              },
+              {
+                "id": "11018",
+                "sourceId": "10160",
+                "destinationId": "10250",
+                "description": "Gets policy before reserve",
+                "technology": "gRPC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go"
+          },
+          {
+            "components": [
+              {
+                "description": "Subscriber lookup по MSISDN",
+                "id": "10181",
+                "name": "MSISDN Resolver",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.subscriber_enrichment.msisdn_resolver",
+                  "rps": 40000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Queries UCP for subscriber data",
+                    "destinationId": "10310",
+                    "id": "10562",
+                    "sourceId": "10181",
+                    "technology": "gRPC"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Получение данных тарифного плана абонента",
+                "id": "10182",
+                "name": "Tariff Plan Fetcher",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.subscriber_enrichment.tariff_fetcher",
+                  "rps": 40000,
+                  "error_rate": 0.003,
+                  "latency": 8,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Fetches tariff plan",
+                    "destinationId": "10080",
+                    "id": "10563",
+                    "sourceId": "10182",
+                    "technology": "gRPC"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Сервис обогащения данных абонента для тарификации",
+            "id": "10180",
+            "name": "Subscriber Enrichment Service",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.subscriber_enrichment",
+              "rps": 40000,
+              "error_rate": 0.002,
+              "latency": 10,
+              "technology": "Go"
+            },
+            "relationships": [
+              {
+                "description": "Fetches subscriber profile",
+                "destinationId": "10310",
+                "id": "10580",
+                "sourceId": "10180",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Fetches tariff plan details",
+                "destinationId": "10080",
+                "id": "10581",
+                "sourceId": "10180",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Fetches roaming data",
+                "destinationId": "10330",
+                "id": "10582",
+                "sourceId": "10180",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "10935",
+                "sourceId": "10180",
+                "destinationId": "10110",
+                "description": "Reads from profile cache",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10936",
+                "sourceId": "10180",
+                "destinationId": "10050",
+                "description": "Provides enriched data",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10937",
+                "sourceId": "10180",
+                "destinationId": "10420",
+                "description": "Fetches subscriber from HLR",
+                "technology": "MAP"
+              },
+              {
+                "id": "11019",
+                "sourceId": "10180",
+                "destinationId": "10495",
+                "description": "Validates voucher eligibility",
+                "technology": "HTTPS/REST"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go"
+          },
+          {
+            "components": [
+              {
+                "description": "Агрегирование метрик по тарификации",
+                "id": "10191",
+                "name": "Rating Metrics Collector",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.analytics.rating_metrics",
+                  "rps": 5000,
+                  "error_rate": 0.002,
+                  "latency": 20,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Отчёты об использовании ресурсов",
+                "id": "10192",
+                "name": "Usage Report Generator",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.analytics.usage_report",
+                  "rps": 100,
+                  "error_rate": 0.01,
+                  "latency": 500,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Reads CDR data",
+                    "destinationId": "10090",
+                    "id": "10564",
+                    "sourceId": "10192",
+                    "technology": "Kafka"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Analytics Service — агрегирование статистики тарификации и CDR-аналитика",
+            "id": "10190",
+            "name": "Analytics Service",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.analytics",
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 50,
+              "technology": "Go"
+            },
+            "relationships": [
+              {
+                "description": "Consumes CDR events for analytics",
+                "destinationId": "10090",
+                "id": "10590",
+                "sourceId": "10190",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Sends aggregated metrics to BeeInside",
+                "destinationId": "10360",
+                "id": "10591",
+                "sourceId": "10190",
+                "technology": "HTTP"
+              },
+              {
+                "description": "Sends usage data to billing",
+                "destinationId": "10140",
+                "id": "10592",
+                "sourceId": "10190",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10814",
+                "sourceId": "10190",
+                "destinationId": "10470",
+                "description": "Sends usage analytics",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10906",
+                "sourceId": "10190",
+                "destinationId": "10080",
+                "description": "Reads tariff catalog",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10907",
+                "sourceId": "10190",
+                "destinationId": "10050",
+                "description": "Reads rating metrics",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11020",
+                "sourceId": "10190",
+                "destinationId": "10480",
+                "description": "Reads NE topology",
+                "technology": "SNMP/REST"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go"
+          },
+          {
+            "components": [
+              {
+                "description": "Проверка на признаки мошенничества при тарификации",
+                "id": "10201",
+                "name": "Fraud Checker",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.fraud_prevention.fraud_checker",
+                  "rps": 45000,
+                  "error_rate": 0.001,
+                  "latency": 5,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Calls anti-fraud API",
+                    "destinationId": "10430",
+                    "id": "10565",
+                    "sourceId": "10201",
+                    "technology": "HTTPS/REST"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Блокировка подозрительных сессий",
+                "id": "10202",
+                "name": "Session Blocker",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs.fraud_prevention.session_blocker",
+                  "rps": 500,
+                  "error_rate": 0.01,
+                  "latency": 10,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Marks session as blocked",
+                    "destinationId": "10070",
+                    "id": "10566",
+                    "sourceId": "10202",
+                    "technology": "RPC"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Fraud Prevention — защита от мошенничества в real-time тарификации",
+            "id": "10200",
+            "name": "Fraud Prevention Service",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.fraud_prevention",
+              "rps": 45000,
+              "error_rate": 0.001,
+              "latency": 8,
+              "technology": "Go"
+            },
+            "relationships": [
+              {
+                "description": "Checks fraud signals",
+                "destinationId": "10430",
+                "id": "10600",
+                "sourceId": "10200",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Updates session on fraud detection",
+                "destinationId": "10070",
+                "id": "10601",
+                "sourceId": "10200",
+                "technology": "RPC"
+              },
+              {
+                "description": "Publishes fraud alert",
+                "destinationId": "10090",
+                "id": "10602",
+                "sourceId": "10200",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10910",
+                "sourceId": "10200",
+                "destinationId": "10110",
+                "description": "Checks subscriber profile",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10911",
+                "sourceId": "10200",
+                "destinationId": "10440",
+                "description": "Sends fraud alert to Zabbix",
+                "technology": "SNMP/HTTP"
+              },
+              {
+                "id": "11021",
+                "sourceId": "10200",
+                "destinationId": "10130",
+                "description": "Checks balance before block",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "11022",
+                "sourceId": "10200",
+                "destinationId": "10160",
+                "description": "Blocks further reservation",
+                "technology": "gRPC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go"
+          },
+          {
+            "description": "Config Service — централизованное хранилище конфигурации OCS",
+            "id": "10210",
+            "name": "Config Service",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.config_service",
+              "rps": 1000,
+              "error_rate": 0.001,
+              "latency": 3,
+              "technology": "etcd/Go"
+            },
+            "relationships": [
+              {
+                "id": "10918",
+                "sourceId": "10210",
+                "destinationId": "10050",
+                "description": "Provides config to rating engine",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10919",
+                "sourceId": "10210",
+                "destinationId": "10040",
+                "description": "Provides config to gateway",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10920",
+                "sourceId": "10210",
+                "destinationId": "10060",
+                "description": "Provides config to CDR processor",
+                "technology": "gRPC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "etcd/Go"
+          },
+          {
+            "description": "gRPC Load Balancer для сервисов OCS",
+            "id": "10220",
+            "name": "Internal Load Balancer",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs.internal_lb",
+              "rps": 100000,
+              "error_rate": 0.0002,
+              "latency": 1,
+              "technology": "Envoy"
+            },
+            "relationships": [
+              {
+                "description": "Routes to Rating Engine",
+                "destinationId": "10050",
+                "id": "10610",
+                "sourceId": "10220",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Routes to Reserve Service",
+                "destinationId": "10160",
+                "id": "10611",
+                "sourceId": "10220",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Routes to Subscriber Enrichment",
+                "destinationId": "10180",
+                "id": "10612",
+                "sourceId": "10220",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10923",
+                "sourceId": "10220",
+                "destinationId": "10200",
+                "description": "Routes to fraud prevention",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10924",
+                "sourceId": "10220",
+                "destinationId": "10190",
+                "description": "Routes to analytics",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10925",
+                "sourceId": "10220",
+                "destinationId": "10230",
+                "description": "Routes to RADIUS gateway",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11023",
+                "sourceId": "10220",
+                "destinationId": "10250",
+                "description": "Routes to policy cache",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11024",
+                "sourceId": "10220",
+                "destinationId": "10240",
+                "description": "Routes to reconciliation",
+                "technology": "gRPC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Envoy"
+          },
+          {
+            "id": "10230",
+            "name": "RADIUS Gateway",
+            "description": "RADIUS-шлюз для legacy-узлов",
+            "technology": "Go",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Go",
+              "structurizr.dsl.identifier": "ocs.radius_gateway"
+            },
+            "components": [
+              {
+                "id": "10231",
+                "name": "RADIUS Auth Handler",
+                "description": "Обработчик RADIUS Access-Request",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "ocs.radius_gw.auth"
+                },
+                "relationships": [
+                  {
+                    "id": "10660",
+                    "sourceId": "10231",
+                    "destinationId": "10040",
+                    "description": "Forwards to Diameter GW",
+                    "technology": "gRPC"
+                  }
+                ]
+              },
+              {
+                "id": "10232",
+                "name": "RADIUS Acct Handler",
+                "description": "Обработчик RADIUS Accounting",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "ocs.radius_gw.acct"
+                },
+                "relationships": [
+                  {
+                    "id": "10661",
+                    "sourceId": "10232",
+                    "destinationId": "10090",
+                    "description": "Publishes CDR",
+                    "technology": "Kafka"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "10700",
+                "sourceId": "10230",
+                "destinationId": "10040",
+                "description": "Forwards rating request",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10701",
+                "sourceId": "10230",
+                "destinationId": "10090",
+                "description": "Publishes CDR events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10702",
+                "sourceId": "10230",
+                "destinationId": "10210",
+                "description": "Reads config",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10900",
+                "sourceId": "10230",
+                "destinationId": "10250",
+                "description": "Reads policy from cache",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10901",
+                "sourceId": "10230",
+                "destinationId": "10310",
+                "description": "Fetches subscriber profile",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10902",
+                "sourceId": "10230",
+                "destinationId": "10110",
+                "description": "Reads cached profile",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11025",
+                "sourceId": "10230",
+                "destinationId": "10040",
+                "description": "Forwards RADIUS session to DGW",
+                "technology": "gRPC"
+              }
+            ]
+          },
+          {
+            "id": "10240",
+            "name": "Reconciliation Service",
+            "description": "Сервис сверки тарификации и баланса",
+            "technology": "Go",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Go",
+              "structurizr.dsl.identifier": "ocs.reconciliation"
+            },
+            "components": [
+              {
+                "id": "10241",
+                "name": "Balance Reconciler",
+                "description": "Сверка балансов OCS-BM",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "ocs.reconciliation.balance"
+                },
+                "relationships": [
+                  {
+                    "id": "10662",
+                    "sourceId": "10241",
+                    "destinationId": "10130",
+                    "description": "Requests balance snapshot",
+                    "technology": "HTTPS/REST"
+                  }
+                ]
+              },
+              {
+                "id": "10242",
+                "name": "CDR Reconciler",
+                "description": "Сверка CDR с биллингом",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "ocs.reconciliation.cdr"
+                },
+                "relationships": [
+                  {
+                    "id": "10663",
+                    "sourceId": "10242",
+                    "destinationId": "10140",
+                    "description": "Compares CDR count",
+                    "technology": "Kafka"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "10710",
+                "sourceId": "10240",
+                "destinationId": "10130",
+                "description": "Queries balance for reconciliation",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "10711",
+                "sourceId": "10240",
+                "destinationId": "10140",
+                "description": "Compares CDR records",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10712",
+                "sourceId": "10240",
+                "destinationId": "10090",
+                "description": "Reads CDR events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10713",
+                "sourceId": "10240",
+                "destinationId": "10360",
+                "description": "Reports discrepancies",
+                "technology": "HTTP"
+              },
+              {
+                "id": "10904",
+                "sourceId": "10240",
+                "destinationId": "10310",
+                "description": "Fetches subscriber list",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10905",
+                "sourceId": "10240",
+                "destinationId": "10070",
+                "description": "Reads active sessions",
+                "technology": "RPC"
+              },
+              {
+                "id": "11026",
+                "sourceId": "10240",
+                "destinationId": "10360",
+                "description": "Reports reconciliation metrics",
+                "technology": "HTTP"
+              }
+            ]
+          },
+          {
+            "id": "10250",
+            "name": "Policy Cache",
+            "description": "Кэш политик PCRF для ускорения тарификации",
+            "technology": "Go/Redis",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Go/Redis",
+              "structurizr.dsl.identifier": "ocs.policy_cache"
+            },
+            "components": [
+              {
+                "id": "10251",
+                "name": "Policy Fetcher",
+                "description": "Загрузка политик из PCRF",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "ocs.policy_cache.fetcher"
+                },
+                "relationships": [
+                  {
+                    "id": "10664",
+                    "sourceId": "10251",
+                    "destinationId": "10410",
+                    "description": "Fetches policy rules",
+                    "technology": "Diameter Gx"
+                  }
+                ]
+              },
+              {
+                "id": "10252",
+                "name": "Cache Invalidator",
+                "description": "Инвалидация устаревших политик",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "ocs.policy_cache.invalidator"
+                },
+                "relationships": []
+              }
+            ],
+            "relationships": [
+              {
+                "id": "10720",
+                "sourceId": "10250",
+                "destinationId": "10410",
+                "description": "Fetches PCRF policies",
+                "technology": "Diameter Gx"
+              },
+              {
+                "id": "10721",
+                "sourceId": "10250",
+                "destinationId": "10090",
+                "description": "Listens policy update events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10903",
+                "sourceId": "10250",
+                "destinationId": "10130",
+                "description": "Checks balance for policy",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "10938",
+                "sourceId": "10250",
+                "destinationId": "10370",
+                "description": "Gets routing policy via DRA",
+                "technology": "Diameter"
+              },
+              {
+                "id": "11027",
+                "sourceId": "10250",
+                "destinationId": "10050",
+                "description": "Pushes policy update to rating",
+                "technology": "gRPC"
+              }
+            ]
+          },
+          {
+            "id": "10260",
+            "name": "Health Check Service",
+            "description": "Сервис проверки работоспособности OCS",
+            "technology": "Go",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Go",
+              "structurizr.dsl.identifier": "ocs.health_check"
+            },
+            "components": [
+              {
+                "id": "10261",
+                "name": "Liveness Probe",
+                "description": "HTTP liveness endpoint",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "ocs.health_check.liveness"
+                },
+                "relationships": []
+              },
+              {
+                "id": "10262",
+                "name": "Readiness Probe",
+                "description": "HTTP readiness endpoint",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "ocs.health_check.readiness"
+                },
+                "relationships": [
+                  {
+                    "id": "10665",
+                    "sourceId": "10262",
+                    "destinationId": "10070",
+                    "description": "Checks session store health",
+                    "technology": "RPC"
+                  }
+                ]
+              },
+              {
+                "id": "10263",
+                "name": "Dependency Checker",
+                "description": "Проверка доступности зависимостей",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "ocs.health_check.dep_checker"
+                },
+                "relationships": [
+                  {
+                    "id": "10666",
+                    "sourceId": "10263",
+                    "destinationId": "10080",
+                    "description": "Checks tariff catalog health",
+                    "technology": "gRPC"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "10730",
+                "sourceId": "10260",
+                "destinationId": "10360",
+                "description": "Pushes health metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "10731",
+                "sourceId": "10260",
+                "destinationId": "10440",
+                "description": "Sends alerts to Zabbix",
+                "technology": "SNMP/HTTP"
+              },
+              {
+                "id": "10916",
+                "sourceId": "10260",
+                "destinationId": "10090",
+                "description": "Checks Kafka health",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10917",
+                "sourceId": "10260",
+                "destinationId": "10050",
+                "description": "Checks rating engine health",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11028",
+                "sourceId": "10260",
+                "destinationId": "10160",
+                "description": "Checks reserve svc health",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11029",
+                "sourceId": "10260",
+                "destinationId": "10200",
+                "description": "Checks fraud svc health",
+                "technology": "gRPC"
+              }
+            ]
+          },
+          {
+            "id": "10270",
+            "name": "Circuit Breaker Proxy",
+            "description": "Proxy с circuit breaker для внешних вызовов",
+            "technology": "Go/Envoy",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Go/Envoy",
+              "structurizr.dsl.identifier": "ocs.circuit_breaker"
+            },
+            "components": [
+              {
+                "id": "10271",
+                "name": "BM Circuit Breaker",
+                "description": "Circuit breaker для BM",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "ocs.circuit_breaker.bm"
+                },
+                "relationships": [
+                  {
+                    "id": "10667",
+                    "sourceId": "10271",
+                    "destinationId": "10130",
+                    "description": "Proxies BM calls",
+                    "technology": "HTTPS/REST"
+                  }
+                ]
+              },
+              {
+                "id": "10272",
+                "name": "UCP Circuit Breaker",
+                "description": "Circuit breaker для UCP",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "ocs.circuit_breaker.ucp"
+                },
+                "relationships": [
+                  {
+                    "id": "10668",
+                    "sourceId": "10272",
+                    "destinationId": "10310",
+                    "description": "Proxies UCP calls",
+                    "technology": "gRPC"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "10740",
+                "sourceId": "10270",
+                "destinationId": "10130",
+                "description": "Proxied calls to BM",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "10741",
+                "sourceId": "10270",
+                "destinationId": "10310",
+                "description": "Proxied calls to UCP",
+                "technology": "gRPC"
+              },
+              {
+                "id": "10742",
+                "sourceId": "10270",
+                "destinationId": "10090",
+                "description": "Publishes CB state changes",
+                "technology": "Kafka"
+              },
+              {
+                "id": "10914",
+                "sourceId": "10270",
+                "destinationId": "10420",
+                "description": "Proxies HLR calls",
+                "technology": "MAP"
+              },
+              {
+                "id": "10915",
+                "sourceId": "10270",
+                "destinationId": "10430",
+                "description": "Proxies anti-fraud calls",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "11030",
+                "sourceId": "10270",
+                "destinationId": "10500",
+                "description": "Proxies traffic shaping calls",
+                "technology": "gRPC"
+              },
+              {
+                "id": "11031",
+                "sourceId": "10270",
+                "destinationId": "10495",
+                "description": "Proxies voucher calls",
+                "technology": "HTTPS/REST"
+              }
+            ]
+          }
+        ],
+        "description": "Online Charging System — платформа онлайн-тарификации и управления квотами абонентов",
+        "id": "10010",
+        "location": "Internal",
+        "name": "Online Charging System (OCS)",
+        "properties": {
+          "structurizr.dsl.identifier": "ocs",
+          "rps": 50000,
+          "error_rate": 0.002,
+          "latency": 10,
+          "technology": "Go/Lua/Java",
+          "cmdb": "OCS"
+        },
+        "relationships": [
+          {
+            "description": "Deducts subscriber balance in real time",
+            "destinationId": "10130",
+            "id": "10300",
+            "sourceId": "10010",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "description": "Fetches subscriber type and profile",
+            "destinationId": "10310",
+            "id": "10301",
+            "sourceId": "10010",
+            "technology": "gRPC"
+          },
+          {
+            "description": "Sends rated CDR for post-processing",
+            "destinationId": "10140",
+            "id": "10302",
+            "sourceId": "10010",
+            "technology": "Kafka"
+          },
+          {
+            "description": "Sends CDR to mediation layer",
+            "destinationId": "10120",
+            "id": "10303",
+            "sourceId": "10010",
+            "technology": "Kafka"
+          },
+          {
+            "description": "Fetches roaming tariff data",
+            "destinationId": "10330",
+            "id": "10304",
+            "sourceId": "10010",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "id": "10810",
+            "sourceId": "10010",
+            "destinationId": "10460",
+            "description": "Fetches service catalog",
+            "technology": "gRPC"
+          },
+          {
+            "id": "10811",
+            "sourceId": "10010",
+            "destinationId": "10470",
+            "description": "Sends aggregated data",
+            "technology": "Kafka"
+          },
+          {
+            "id": "10812",
+            "sourceId": "10010",
+            "destinationId": "10495",
+            "description": "Validates voucher",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "id": "10834",
+            "sourceId": "10230",
+            "destinationId": "10160",
+            "description": "Passes to reserve service",
+            "technology": "gRPC"
+          },
+          {
+            "id": "10835",
+            "sourceId": "10240",
+            "destinationId": "10480",
+            "description": "Reads NE data for reconciliation",
+            "technology": "SNMP/REST"
+          },
+          {
+            "id": "10939",
+            "sourceId": "10010",
+            "destinationId": "10450",
+            "description": "Receives flow analysis",
+            "technology": "Kafka"
+          },
+          {
+            "id": "10940",
+            "sourceId": "10010",
+            "destinationId": "10480",
+            "description": "Gets NE data",
+            "technology": "SNMP/REST"
+          },
+          {
+            "id": "10941",
+            "sourceId": "10010",
+            "destinationId": "10490",
+            "description": "Sends interconnect CDR",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "id": "10942",
+            "sourceId": "10010",
+            "destinationId": "10500",
+            "description": "Updates traffic shaping",
+            "technology": "gRPC"
+          },
+          {
+            "id": "11032",
+            "sourceId": "10010",
+            "destinationId": "10370",
+            "description": "Routes Diameter traffic through DRA",
+            "technology": "Diameter"
+          },
+          {
+            "id": "11033",
+            "sourceId": "10010",
+            "destinationId": "10410",
+            "description": "Gets quota from PCRF",
+            "technology": "Diameter Sy"
+          },
+          {
+            "id": "11034",
+            "sourceId": "10010",
+            "destinationId": "10420",
+            "description": "Fetches subscriber location",
+            "technology": "MAP"
+          },
+          {
+            "id": "11035",
+            "sourceId": "10010",
+            "destinationId": "10430",
+            "description": "Checks anti-fraud",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "id": "11036",
+            "sourceId": "10010",
+            "destinationId": "10440",
+            "description": "Sends system alerts",
+            "technology": "SNMP/HTTP"
+          }
+        ],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Balance Manager — управление балансами абонентов",
+        "id": "10130",
+        "location": "Internal",
+        "name": "Balance Manager",
+        "properties": {
+          "structurizr.dsl.identifier": "bm_ext",
+          "rps": 80000,
+          "error_rate": 0.001,
+          "latency": 5,
+          "technology": "REST",
+          "cmdb": "BM"
+        },
+        "containers": [
+          {
+            "description": "Внешний OpenAPI интерфейс Balance Manager",
+            "id": "10131",
+            "name": "[ext] Balance Manager OpenAPI",
+            "properties": {
+              "structurizr.dsl.identifier": "bm_ext.openapi",
+              "rps": 80000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "HTTPS/REST"
+            },
+            "relationships": [],
+            "tags": "Element,Container",
+            "technology": "HTTPS/REST"
+          }
+        ],
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Unified Customer Profile — единый профиль абонента",
+        "id": "10310",
+        "location": "Internal",
+        "name": "Unified Customer Profile (UCP)",
+        "properties": {
+          "structurizr.dsl.identifier": "ucp_ext",
+          "rps": 30000,
+          "error_rate": 0.003,
+          "latency": 15,
+          "technology": "gRPC",
+          "cmdb": "UCP"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Mediation Layer — система-медиация для CDR",
+        "id": "10120",
+        "location": "Internal",
+        "name": "Mediation Layer",
+        "properties": {
+          "structurizr.dsl.identifier": "mediation_ext",
+          "rps": 40000,
+          "error_rate": 0.003,
+          "latency": 20,
+          "technology": "Kafka",
+          "cmdb": "MEDIATION"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Billing система для постобработки CDR",
+        "id": "10140",
+        "location": "External",
+        "name": "Billing System (Ensemble/Atlant)",
+        "properties": {
+          "structurizr.dsl.identifier": "billing_ext",
+          "rps": 5000,
+          "error_rate": 0.005,
+          "latency": 50,
+          "technology": "Kafka/HTTPS",
+          "cmdb": "BILLING"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "SMS-платформа для отправки уведомлений абонентам",
+        "id": "10320",
+        "location": "Internal",
+        "name": "SMS Notification Platform",
+        "properties": {
+          "structurizr.dsl.identifier": "sms_platform_ext",
+          "rps": 10000,
+          "error_rate": 0.02,
+          "latency": 100,
+          "technology": "HTTPS/REST",
+          "cmdb": "SMS_PLATFORM"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Платформа роуминговых тарифов",
+        "id": "10330",
+        "location": "External",
+        "name": "Roaming Tariff Platform",
+        "properties": {
+          "structurizr.dsl.identifier": "roaming_ext",
+          "rps": 500,
+          "error_rate": 0.01,
+          "latency": 80,
+          "technology": "HTTPS/REST",
+          "cmdb": "ROAMING"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Платформа наблюдаемости — Prometheus/Grafana",
+        "id": "10360",
+        "location": "Internal",
+        "name": "Платформа наблюдаемости (BeeInside)",
+        "properties": {
+          "structurizr.dsl.identifier": "beeinside_ext",
+          "rps": 500,
+          "error_rate": 0.001,
+          "latency": 50,
+          "technology": "Prometheus/Grafana",
+          "cmdb": "BEEINSIDE"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Diameter Routing Agent — маршрутизация Diameter-трафика",
+        "id": "10370",
+        "location": "Internal",
+        "name": "Diameter Routing Agent",
+        "properties": {
+          "structurizr.dsl.identifier": "dra_ext",
+          "rps": 60000,
+          "error_rate": 0.0005,
+          "latency": 2,
+          "technology": "Diameter",
+          "cmdb": "DRA"
+        },
+        "relationships": [
+          {
+            "description": "Routes Diameter traffic to OCS",
+            "destinationId": "10010",
+            "id": "10380",
+            "sourceId": "10370",
+            "technology": "Diameter"
+          }
+        ],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Unified Balance — управление балансами нового поколения",
+        "id": "10400",
+        "location": "Internal",
+        "name": "Unified Balance (UB)",
+        "properties": {
+          "structurizr.dsl.identifier": "ub_ext",
+          "rps": 60000,
+          "error_rate": 0.002,
+          "latency": 8,
+          "technology": "gRPC",
+          "cmdb": "UB"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "PCRF — Policy and Charging Rules Function",
+        "id": "10410",
+        "location": "Internal",
+        "name": "PCRF (Policy & Charging Rules Function)",
+        "properties": {
+          "structurizr.dsl.identifier": "pcrf_ext",
+          "rps": 30000,
+          "error_rate": 0.001,
+          "latency": 5,
+          "technology": "Diameter",
+          "cmdb": "PCRF"
+        },
+        "relationships": [
+          {
+            "description": "Sends quota grants to OCS",
+            "destinationId": "10010",
+            "id": "10550",
+            "sourceId": "10410",
+            "technology": "Diameter Sy"
+          }
+        ],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "HLR — Home Location Register (данные подписчика)",
+        "id": "10420",
+        "location": "Internal",
+        "name": "HLR Home Location Registry",
+        "properties": {
+          "structurizr.dsl.identifier": "hlr_ext",
+          "rps": 5000,
+          "error_rate": 0.001,
+          "latency": 20,
+          "technology": "MAP",
+          "cmdb": "HLR"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Anti-Fraud система — антифрод в реальном времени",
+        "id": "10430",
+        "location": "Internal",
+        "name": "Anti-Fraud System",
+        "properties": {
+          "structurizr.dsl.identifier": "antifraud_ocs_ext",
+          "rps": 10000,
+          "error_rate": 0.002,
+          "latency": 15,
+          "technology": "HTTPS/REST",
+          "cmdb": "ANTIFRAUD_OCS"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Платформа наблюдаемости для мониторинга OCS",
+        "id": "10440",
+        "location": "Internal",
+        "name": "Zabbix Monitoring",
+        "properties": {
+          "structurizr.dsl.identifier": "zabbix_ext",
+          "rps": 200,
+          "error_rate": 0.005,
+          "latency": 100,
+          "technology": "SNMP/HTTP",
+          "cmdb": "ZABBIX"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "id": "10450",
+        "name": "Network Traffic Analysis",
+        "description": "Анализ трафика сети",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "HTTPS",
+          "structurizr.dsl.identifier": "nta_ext",
+          "cmdb": "NTA"
+        },
+        "relationships": [
+          {
+            "id": "10800",
+            "sourceId": "10450",
+            "destinationId": "10010",
+            "description": "Sends enriched flow data",
+            "technology": "Kafka"
+          }
+        ]
+      },
+      {
+        "id": "10460",
+        "name": "Service Catalog",
+        "description": "Каталог услуг для тарификации",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "gRPC",
+          "structurizr.dsl.identifier": "catalog_ext",
+          "cmdb": "CATALOG"
+        },
+        "relationships": []
+      },
+      {
+        "id": "10470",
+        "name": "Data Warehouse",
+        "description": "Хранилище данных для аналитики",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "Kafka",
+          "structurizr.dsl.identifier": "dw_ocs_ext",
+          "cmdb": "DW_OCS"
+        },
+        "relationships": []
+      },
+      {
+        "id": "10480",
+        "name": "Network Element Manager",
+        "description": "Управление сетевыми элементами",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "SNMP/REST",
+          "structurizr.dsl.identifier": "nem_ext",
+          "cmdb": "NEM"
+        },
+        "relationships": []
+      },
+      {
+        "id": "10490",
+        "name": "Interconnect Billing",
+        "description": "Межоператорский расчёт",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "HTTPS/REST",
+          "structurizr.dsl.identifier": "interconnect_ext",
+          "cmdb": "INTERCONNECT"
+        },
+        "relationships": []
+      },
+      {
+        "id": "10495",
+        "name": "Voucher Management",
+        "description": "Управление ваучерами",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "HTTPS/REST",
+          "structurizr.dsl.identifier": "voucher_ext",
+          "cmdb": "VOUCHER"
+        },
+        "relationships": []
+      },
+      {
+        "id": "10500",
+        "name": "Traffic Shaping System",
+        "description": "Управление QoS",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "gRPC",
+          "structurizr.dsl.identifier": "traffic_shaping_ext",
+          "cmdb": "TRAFFIC_SHAPING"
+        },
+        "relationships": []
+      }
+    ],
+    "deploymentNodes": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "10040",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "11001",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.diameter_gw_node.diameter_gw_pod.diameter_gw_instance",
+                      "rps": 50000,
+                      "error_rate": 0.001,
+                      "latency": 3,
+                      "technology": "Docker"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Forwards request to Rating Engine",
+                        "destinationId": "11010",
+                        "id": "11100",
+                        "linkedRelationshipId": "10200",
+                        "sourceId": "11001",
+                        "technology": "gRPC"
+                      },
+                      {
+                        "description": "Stores session",
+                        "destinationId": "11020",
+                        "id": "11101",
+                        "linkedRelationshipId": "10201",
+                        "sourceId": "11001",
+                        "technology": "RPC"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "11000",
+                "instances": "1",
+                "name": "diameter-gw-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.diameter_gw_node.diameter_gw_pod",
+                  "image": "ocs/diameter-gateway",
+                  "rps": 50000,
+                  "error_rate": 0.001,
+                  "latency": 3,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "10999",
+            "instances": "4",
+            "name": "diameter-gw-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.diameter_gw_node",
+              "flavor": "8cpu16ram",
+              "rps": 50000,
+              "error_rate": 0.001,
+              "latency": 3,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "10050",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "11010",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.rating_node.rating_pod.rating_instance",
+                      "rps": 45000,
+                      "error_rate": 0.002,
+                      "latency": 8,
+                      "technology": "Docker"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Deducts balance",
+                        "destinationId": "11040",
+                        "id": "11102",
+                        "linkedRelationshipId": "10210",
+                        "sourceId": "11010",
+                        "technology": "HTTPS/REST"
+                      },
+                      {
+                        "description": "Fetches tariff",
+                        "destinationId": "11030",
+                        "id": "11103",
+                        "linkedRelationshipId": "10211",
+                        "sourceId": "11010",
+                        "technology": "gRPC"
+                      },
+                      {
+                        "description": "Fetches profile",
+                        "destinationId": "11050",
+                        "id": "11104",
+                        "linkedRelationshipId": "10212",
+                        "sourceId": "11010",
+                        "technology": "gRPC"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "11009",
+                "instances": "1",
+                "name": "rating-engine-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.rating_node.rating_pod",
+                  "image": "ocs/rating-engine",
+                  "rps": 45000,
+                  "error_rate": 0.002,
+                  "latency": 8,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "11008",
+            "instances": "6",
+            "name": "rating-engine-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.rating_node",
+              "flavor": "16cpu32ram",
+              "rps": 45000,
+              "error_rate": 0.002,
+              "latency": 8,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "10070",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "11020",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.session_store_node.session_store_instance",
+                  "rps": 120000,
+                  "error_rate": 0.0001,
+                  "latency": 1,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "11019",
+            "instances": "3",
+            "name": "session-store-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.session_store_node",
+              "flavor": "16cpu128ram",
+              "image": "tarantool/tarantool",
+              "rps": 120000,
+              "error_rate": 0.0001,
+              "latency": 1,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "10080",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "11030",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.tariff_catalog_node.tariff_catalog_instance",
+                  "rps": 5000,
+                  "error_rate": 0.001,
+                  "latency": 5,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "11029",
+            "instances": "2",
+            "name": "tariff-catalog-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.tariff_catalog_node",
+              "flavor": "4cpu8ram",
+              "image": "ocs/tariff-catalog",
+              "rps": 5000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "10131",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "11040",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.bm_lb.bm_instance",
+                  "rps": 80000,
+                  "error_rate": 0.001,
+                  "latency": 5,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "11039",
+            "instances": "2",
+            "name": "bm-loadbalancer",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.bm_lb",
+              "flavor": "4cpu8ram",
+              "rps": 80000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "Nginx"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "10110",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "11050",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.profile_cache_node.profile_cache_instance",
+                  "rps": 80000,
+                  "error_rate": 0.002,
+                  "latency": 2,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "11049",
+            "instances": "2",
+            "name": "profile-cache-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.profile_cache_node",
+              "flavor": "8cpu32ram",
+              "image": "ocs/subscriber-profile-cache",
+              "rps": 80000,
+              "error_rate": 0.002,
+              "latency": 2,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "10060",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "11060",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.cdr_node.cdr_pod.cdr_instance",
+                      "rps": 30000,
+                      "error_rate": 0.005,
+                      "latency": 20,
+                      "technology": "Docker"
+                    },
+                    "relationships": [],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "11059",
+                "instances": "1",
+                "name": "cdr-processor-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.cdr_node.cdr_pod",
+                  "image": "ocs/cdr-processor",
+                  "rps": 30000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "11058",
+            "instances": "3",
+            "name": "cdr-processor-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.cdr_node",
+              "flavor": "8cpu16ram",
+              "rps": 30000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "infrastructureNodes": [
+              {
+                "description": "Kubernetes Ingress для OCS Admin Portal",
+                "environment": "Production",
+                "id": "11070",
+                "name": "OCS Ingress (WAF)",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.infra.ocs_ingress",
+                  "rps": 200,
+                  "error_rate": 0.005,
+                  "latency": 10,
+                  "technology": "WAF"
+                },
+                "relationships": [
+                  {
+                    "description": "Routes admin traffic",
+                    "destinationId": "11080",
+                    "id": "11110",
+                    "sourceId": "11070",
+                    "technology": "HTTPS"
+                  }
+                ],
+                "tags": "Element,Infrastructure Node",
+                "technology": "WAF"
+              },
+              {
+                "description": "Load Balancer для Diameter Gateway",
+                "environment": "Production",
+                "id": "11075",
+                "name": "Diameter LB",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.infra.diameter_lb",
+                  "rps": 60000,
+                  "error_rate": 0.0003,
+                  "latency": 1,
+                  "technology": "HAProxy"
+                },
+                "relationships": [
+                  {
+                    "description": "Distributes Diameter load",
+                    "destinationId": "10999",
+                    "id": "11111",
+                    "sourceId": "11075",
+                    "technology": "Diameter"
+                  }
+                ],
+                "tags": "Element,Infrastructure Node",
+                "technology": "HAProxy"
+              },
+              {
+                "id": "11085",
+                "name": "OCS Prometheus Pushgateway",
+                "description": "Prometheus PushGateway OCS",
+                "technology": "Prometheus",
+                "environment": "Production",
+                "tags": "Element,Infrastructure Node",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.002,
+                  "latency": 3,
+                  "technology": "Prometheus",
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.infra.pushgw"
+                },
+                "relationships": [
+                  {
+                    "id": "11090",
+                    "sourceId": "11085",
+                    "destinationId": "11120",
+                    "description": "Forwards metrics",
+                    "technology": "HTTP"
+                  }
+                ]
+              },
+              {
+                "id": "11086",
+                "name": "OCS Istio Service Mesh",
+                "description": "Istio sidecar mesh OCS",
+                "technology": "Istio",
+                "environment": "Production",
+                "tags": "Element,Infrastructure Node",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.002,
+                  "latency": 3,
+                  "technology": "Istio",
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.infra.istio"
+                },
+                "relationships": []
+              }
+            ],
+            "containerInstances": [
+              {
+                "containerId": "10030",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "11080",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.admin_node.admin_instance",
+                  "rps": 10,
+                  "error_rate": 0.01,
+                  "latency": 150,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "11079",
+            "instances": "1",
+            "name": "admin-portal-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.admin_node",
+              "flavor": "4cpu8ram",
+              "image": "ocs/admin-portal",
+              "rps": 10,
+              "error_rate": 0.01,
+              "latency": 150,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "10160",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "11090",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.reserve_node.reserve_pod.reserve_instance",
+                      "rps": 20000,
+                      "error_rate": 0.003,
+                      "latency": 10,
+                      "technology": "Docker"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Reserves balance",
+                        "destinationId": "11040",
+                        "id": "11120",
+                        "linkedRelationshipId": "10570",
+                        "sourceId": "11090",
+                        "technology": "HTTPS/REST"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "11089",
+                "instances": "1",
+                "name": "reserve-service-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.reserve_node.reserve_pod",
+                  "image": "ocs/reserve-service",
+                  "rps": 20000,
+                  "error_rate": 0.003,
+                  "latency": 10,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "11088",
+            "instances": "4",
+            "name": "reserve-service-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.reserve_node",
+              "flavor": "8cpu16ram",
+              "rps": 20000,
+              "error_rate": 0.003,
+              "latency": 10,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "10180",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "11095",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.enrich_node.enrich_pod.enrich_instance",
+                      "rps": 40000,
+                      "error_rate": 0.002,
+                      "latency": 10,
+                      "technology": "Docker"
+                    },
+                    "relationships": [],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "11094",
+                "instances": "1",
+                "name": "enrichment-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.enrich_node.enrich_pod",
+                  "image": "ocs/subscriber-enrichment",
+                  "rps": 40000,
+                  "error_rate": 0.002,
+                  "latency": 10,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "11093",
+            "instances": "3",
+            "name": "enrichment-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.enrich_node",
+              "flavor": "8cpu16ram",
+              "rps": 40000,
+              "error_rate": 0.002,
+              "latency": 10,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "10200",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "11100",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.fraud_node.fraud_pod.fraud_instance",
+                      "rps": 45000,
+                      "error_rate": 0.001,
+                      "latency": 8,
+                      "technology": "Docker"
+                    },
+                    "relationships": [],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "11099",
+                "instances": "1",
+                "name": "fraud-prevention-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.fraud_node.fraud_pod",
+                  "image": "ocs/fraud-prevention",
+                  "rps": 45000,
+                  "error_rate": 0.001,
+                  "latency": 8,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "11098",
+            "instances": "3",
+            "name": "fraud-prevention-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.fraud_node",
+              "flavor": "8cpu16ram",
+              "rps": 45000,
+              "error_rate": 0.001,
+              "latency": 8,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "10210",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "11105",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.config_node.config_instance",
+                  "rps": 1000,
+                  "error_rate": 0.001,
+                  "latency": 3,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "11104",
+            "instances": "3",
+            "name": "config-service-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.config_node",
+              "flavor": "4cpu8ram",
+              "image": "ocs/config-service",
+              "rps": 1000,
+              "error_rate": 0.001,
+              "latency": 3,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "10220",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "11110",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.ilb_node.ilb_instance",
+                  "rps": 100000,
+                  "error_rate": 0.0002,
+                  "latency": 1,
+                  "technology": "Docker"
+                },
+                "relationships": [
+                  {
+                    "description": "Routes to rating",
+                    "destinationId": "11010",
+                    "id": "11130",
+                    "linkedRelationshipId": "10610",
+                    "sourceId": "11110",
+                    "technology": "gRPC"
+                  },
+                  {
+                    "description": "Routes to reserve",
+                    "destinationId": "11090",
+                    "id": "11131",
+                    "linkedRelationshipId": "10611",
+                    "sourceId": "11110",
+                    "technology": "gRPC"
+                  }
+                ],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "11109",
+            "instances": "2",
+            "name": "internal-lb-node (Envoy)",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.ilb_node",
+              "flavor": "4cpu8ram",
+              "image": "envoyproxy/envoy",
+              "rps": 100000,
+              "error_rate": 0.0002,
+              "latency": 1,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "10190",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "11115",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.analytics_node.analytics_pod.analytics_instance",
+                      "rps": 5000,
+                      "error_rate": 0.005,
+                      "latency": 50,
+                      "technology": "Docker"
+                    },
+                    "relationships": [],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "11114",
+                "instances": "1",
+                "name": "analytics-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.analytics_node.analytics_pod",
+                  "image": "ocs/analytics-service",
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 50,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "11113",
+            "instances": "2",
+            "name": "analytics-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.analytics_node",
+              "flavor": "8cpu16ram",
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 50,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "10095",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "11120",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.metrics_node.metrics_instance",
+                  "rps": 100,
+                  "error_rate": 0.001,
+                  "latency": 10,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "11119",
+            "instances": "1",
+            "name": "metrics-exporter-node",
+            "properties": {
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.metrics_node",
+              "flavor": "2cpu4ram",
+              "image": "ocs/metrics-exporter",
+              "rps": 100,
+              "error_rate": 0.001,
+              "latency": 10,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "id": "11130",
+            "name": "radius-gw-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "2",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.radius_gw_node",
+              "flavor": "8cpu16ram"
+            },
+            "children": [
+              {
+                "id": "11131",
+                "name": "radius-gw-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.radius_gw_node.pod",
+                  "image": "ocs/radius-gateway"
+                },
+                "containerInstances": [
+                  {
+                    "id": "11132",
+                    "containerId": "10230",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 20000,
+                      "error_rate": 0.001,
+                      "latency": 3,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_11132"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "11140",
+            "name": "reconciliation-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "2",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.reconciliation_node",
+              "flavor": "4cpu8ram"
+            },
+            "children": [
+              {
+                "id": "11141",
+                "name": "reconciliation-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.reconciliation_node.pod",
+                  "image": "ocs/reconciliation"
+                },
+                "containerInstances": [
+                  {
+                    "id": "11142",
+                    "containerId": "10240",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 500,
+                      "error_rate": 0.005,
+                      "latency": 100,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_11142"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "11150",
+            "name": "policy-cache-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "3",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.policy_cache_node",
+              "flavor": "8cpu32ram"
+            },
+            "children": [
+              {
+                "id": "11151",
+                "name": "policy-cache-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.policy_cache_node.pod",
+                  "image": "ocs/policy-cache"
+                },
+                "containerInstances": [
+                  {
+                    "id": "11152",
+                    "containerId": "10250",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 40000,
+                      "error_rate": 0.0005,
+                      "latency": 2,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_11152"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "11160",
+            "name": "circuit-breaker-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "4",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.cb_node",
+              "flavor": "4cpu8ram"
+            },
+            "children": [
+              {
+                "id": "11161",
+                "name": "circuit-breaker-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.cb_node.pod",
+                  "image": "envoyproxy/envoy"
+                },
+                "containerInstances": [
+                  {
+                    "id": "11162",
+                    "containerId": "10270",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 100000,
+                      "error_rate": 0.0002,
+                      "latency": 1,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_11162"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "11170",
+            "name": "health-check-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "1",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.health_node",
+              "flavor": "2cpu4ram"
+            },
+            "containerInstances": [
+              {
+                "id": "11171",
+                "containerId": "10260",
+                "instanceId": 1,
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "tags": "Container Instance",
+                "properties": {
+                  "rps": 200,
+                  "error_rate": 0.001,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "inst_11171"
+                },
+                "relationships": []
+              }
+            ]
+          },
+          {
+            "id": "11180",
+            "name": "event-bus-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "3",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "ocs_prod.ocs_k8s.event_bus_node",
+              "flavor": "16cpu32ram",
+              "image": "bitnami/kafka"
+            },
+            "containerInstances": [
+              {
+                "id": "11181",
+                "containerId": "10090",
+                "instanceId": 1,
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "tags": "Container Instance",
+                "properties": {
+                  "rps": 60000,
+                  "error_rate": 0.0005,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "inst_11181"
+                },
+                "relationships": []
+              }
+            ]
+          }
+        ],
+        "environment": "Production",
+        "id": "10998",
+        "instances": "1",
+        "name": "OCS Kubernetes Cluster",
+        "properties": {
+          "structurizr.dsl.identifier": "ocs_prod.ocs_k8s",
+          "rps": 50000,
+          "error_rate": 0.002,
+          "latency": 3,
+          "technology": "Kubernetes"
+        },
+        "tags": "Element,Deployment Node",
+        "technology": "Kubernetes"
+      },
+      {
+        "environment": "Production",
+        "id": "10997",
+        "instances": "1",
+        "name": "OCS Production Platform",
+        "properties": {
+          "structurizr.dsl.identifier": "ocs_prod",
+          "rps": 50000,
+          "error_rate": 0.002,
+          "latency": 3,
+          "technology": "OpenStack"
+        },
+        "tags": "Element,Deployment Node",
+        "technology": "OpenStack",
+        "children": []
+      }
+    ]
+  },
+  "name": "OCS",
+  "views": {
+    "configuration": {
+      "styles": {
+        "elements": [],
+        "relationships": []
+      }
+    }
+  }
+}

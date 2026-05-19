@@ -1,0 +1,3553 @@
+{
+  "configuration": {},
+  "description": "CRM и управление заказами — платформа обслуживания клиентов и обработки заказов",
+  "documentation": {
+    "decisions": [
+      {
+        "content": "# ADR 001 Выбор архитектуры для Order Management\n\n## Status\nAccepted\n\n## Context\nПлатформа должна обрабатывать заказы на подключение/изменение услуг от множества каналов: web, мобильное приложение, контакт-центр.\n\n## Decision\nИспользовать событийно-ориентированную архитектуру на базе Kafka для асинхронной обработки заказов. Stateless микросервисы развёртываются в Kubernetes.\n\n## Consequences\nНеобходима идемпотентная обработка событий и надёжная схема хранения статусов заказов.",
+        "date": "2024-03-10T10:00:00Z",
+        "format": "Markdown",
+        "id": "1",
+        "status": "Accepted",
+        "title": "ADR 001 Выбор архитектуры для Order Management"
+      },
+      {
+        "content": "# ADR 002 Стратегия кэширования данных клиентов\n\n## Status\nAccepted\n\n## Context\nЗапросы данных клиентов происходят очень часто при каждом обращении в контакт-центр.\n\n## Decision\nВнедрить Redis-кэш с TTL 5 минут для данных клиентского профиля. Cache-aside pattern.\n\n## Consequences\nДопустима eventual consistency в пределах TTL кэша.",
+        "date": "2024-03-15T10:00:00Z",
+        "format": "Markdown",
+        "id": "2",
+        "status": "Accepted",
+        "title": "ADR 002 Стратегия кэширования данных клиентов"
+      }
+    ],
+    "sections": [
+      {
+        "content": "## Введение\n\nCRM-платформа обеспечивает единое рабочее место оператора контакт-центра и автоматизированную обработку заказов на подключение и изменение услуг.\n\n### Ключевые функции\n- Управление клиентскими профилями и взаимодействиями\n- Обработка заказов (order management)\n- Интеграция с биллинговыми системами\n- Управление жалобами и инцидентами клиентов",
+        "filename": "01_main.md",
+        "format": "Markdown",
+        "order": 1,
+        "title": ""
+      },
+      {
+        "content": "## HLD\n\n### Контекстная диаграмма\n![](embed:context)\n",
+        "filename": "02_HLD.md",
+        "format": "Markdown",
+        "order": 2,
+        "title": ""
+      },
+      {
+        "content": "### Контейнерная диаграмма\n![](embed:containers)\n",
+        "filename": "03_containers.md",
+        "format": "Markdown",
+        "order": 3,
+        "title": ""
+      },
+      {
+        "content": "### Deployment диаграмма\n![](embed:Production-01)\n",
+        "filename": "04_deployment.md",
+        "format": "Markdown",
+        "order": 4,
+        "title": ""
+      }
+    ]
+  },
+  "id": 600000002,
+  "lastModifiedAgent": "structurizr-cli/",
+  "lastModifiedDate": "2025-05-18T10:00:00Z",
+  "lastModifiedUser": "architect@beeline.ru",
+  "model": {
+    "properties": {
+      "structurizr.groupSeparator": "/",
+      "workspace_cmdb": "CRM",
+      "architect": "Петрова Наталья Сергеевна <NSPetrova@beeline.ru>"
+    },
+    "people": [
+      {
+        "description": "Оператор контакт-центра, работающий с клиентскими обращениями",
+        "id": "20001",
+        "location": "Internal",
+        "name": "Contact Center Agent",
+        "properties": {
+          "structurizr.dsl.identifier": "cc_agent",
+          "rps": 50,
+          "error_rate": 0.05,
+          "latency": 500,
+          "technology": "HTTPS"
+        },
+        "relationships": [
+          {
+            "description": "Uses CRM UI to manage customer interactions",
+            "destinationId": "20010",
+            "id": "20100",
+            "sourceId": "20001",
+            "tags": "Relationship",
+            "technology": "HTTPS"
+          }
+        ],
+        "tags": "Element,Person"
+      },
+      {
+        "description": "Клиент, использующий самообслуживание через web/app",
+        "id": "20002",
+        "location": "External",
+        "name": "Subscriber (Self-Service)",
+        "properties": {
+          "structurizr.dsl.identifier": "subscriber",
+          "rps": 5000,
+          "error_rate": 0.02,
+          "latency": 200,
+          "technology": "HTTPS"
+        },
+        "relationships": [
+          {
+            "description": "Manages services via self-service portal",
+            "destinationId": "20030",
+            "id": "20101",
+            "sourceId": "20002",
+            "tags": "Relationship",
+            "technology": "HTTPS"
+          }
+        ],
+        "tags": "Element,Person"
+      },
+      {
+        "description": "Менеджер продаж B2B, работающий с корпоративными клиентами",
+        "id": "20003",
+        "location": "Internal",
+        "name": "B2B Sales Manager",
+        "properties": {
+          "structurizr.dsl.identifier": "b2b_sales",
+          "rps": 10,
+          "error_rate": 0.03,
+          "latency": 400,
+          "technology": "HTTPS"
+        },
+        "relationships": [
+          {
+            "description": "Creates and manages B2B orders",
+            "destinationId": "20010",
+            "id": "20102",
+            "sourceId": "20003",
+            "tags": "Relationship",
+            "technology": "HTTPS"
+          }
+        ],
+        "tags": "Element,Person"
+      }
+    ],
+    "softwareSystems": [
+      {
+        "containers": [
+          {
+            "components": [
+              {
+                "description": "Интерфейс для работы с клиентской карточкой",
+                "id": "20011",
+                "name": "Customer 360 View",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.crm_core.customer360",
+                  "rps": 2000,
+                  "error_rate": 0.01,
+                  "latency": 80,
+                  "technology": "React"
+                },
+                "relationships": [
+                  {
+                    "description": "Fetches profile from UCP",
+                    "destinationId": "20210",
+                    "id": "20150",
+                    "sourceId": "20011",
+                    "technology": "gRPC"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "React"
+              },
+              {
+                "description": "Управление обращениями клиентов (complaints/cases)",
+                "id": "20012",
+                "name": "Case Management",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.crm_core.case_management",
+                  "rps": 500,
+                  "error_rate": 0.015,
+                  "latency": 100,
+                  "technology": "Java/Spring"
+                },
+                "relationships": [
+                  {
+                    "description": "Saves case to DB",
+                    "destinationId": "20070",
+                    "id": "20151",
+                    "sourceId": "20012",
+                    "technology": "JDBC"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Java/Spring"
+              },
+              {
+                "description": "История взаимодействий с клиентом",
+                "id": "20013",
+                "name": "Interaction History",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.crm_core.interaction_history",
+                  "rps": 3000,
+                  "error_rate": 0.005,
+                  "latency": 50,
+                  "technology": "Java/Spring"
+                },
+                "relationships": [
+                  {
+                    "description": "Reads history from Elasticsearch",
+                    "destinationId": "20080",
+                    "id": "20152",
+                    "sourceId": "20013",
+                    "technology": "HTTP"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Java/Spring"
+              },
+              {
+                "description": "Скриптинг и guided selling для операторов",
+                "id": "20014",
+                "name": "Script Engine",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.crm_core.script_engine",
+                  "rps": 1000,
+                  "error_rate": 0.01,
+                  "latency": 30,
+                  "technology": "Java/Spring"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Java/Spring"
+              }
+            ],
+            "description": "Ядро CRM — управление клиентами, обращениями и историей взаимодействий",
+            "id": "20010",
+            "name": "CRM Core",
+            "properties": {
+              "structurizr.dsl.identifier": "crm.crm_core",
+              "rps": 3000,
+              "error_rate": 0.01,
+              "latency": 100,
+              "technology": "Java/Spring"
+            },
+            "relationships": [
+              {
+                "description": "Fetches subscriber profile",
+                "destinationId": "20210",
+                "id": "20200",
+                "sourceId": "20010",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Creates order for service change",
+                "destinationId": "20040",
+                "id": "20201",
+                "sourceId": "20010",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Fetches balance information",
+                "destinationId": "20220",
+                "id": "20202",
+                "sourceId": "20010",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Checks fraud status",
+                "destinationId": "20250",
+                "id": "20203",
+                "sourceId": "20010",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Stores interaction data",
+                "destinationId": "20080",
+                "id": "20204",
+                "sourceId": "20010",
+                "technology": "HTTP"
+              },
+              {
+                "id": "20507",
+                "sourceId": "20010",
+                "destinationId": "20095",
+                "description": "Reads from customer cache",
+                "technology": "Redis"
+              },
+              {
+                "id": "20509",
+                "sourceId": "20010",
+                "destinationId": "20130",
+                "description": "Creates contract on activation",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "20512",
+                "sourceId": "20010",
+                "destinationId": "20120",
+                "description": "Escalates complaint",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "20513",
+                "sourceId": "20010",
+                "destinationId": "20110",
+                "description": "Checks loyalty status",
+                "technology": "gRPC"
+              },
+              {
+                "id": "20570",
+                "sourceId": "20010",
+                "destinationId": "20095",
+                "description": "Reads cached customer data",
+                "technology": "Redis"
+              },
+              {
+                "id": "20571",
+                "sourceId": "20010",
+                "destinationId": "20140",
+                "description": "Fetches product info",
+                "technology": "gRPC"
+              },
+              {
+                "id": "20572",
+                "sourceId": "20010",
+                "destinationId": "20110",
+                "description": "Checks loyalty points",
+                "technology": "gRPC"
+              },
+              {
+                "id": "20573",
+                "sourceId": "20010",
+                "destinationId": "20150",
+                "description": "Searches customers",
+                "technology": "HTTP"
+              },
+              {
+                "id": "20574",
+                "sourceId": "20010",
+                "destinationId": "20290",
+                "description": "Pushes operational metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "20575",
+                "sourceId": "20010",
+                "destinationId": "20280",
+                "description": "Sends interaction data to DWH",
+                "technology": "Kafka"
+              },
+              {
+                "id": "21001",
+                "sourceId": "20010",
+                "destinationId": "20060",
+                "description": "Routes through API gateway",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "21002",
+                "sourceId": "20010",
+                "destinationId": "20050",
+                "description": "Triggers notification on case",
+                "technology": "Kafka"
+              },
+              {
+                "id": "21003",
+                "sourceId": "20010",
+                "destinationId": "20070",
+                "description": "Reads/writes customer data",
+                "technology": "JDBC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Java/Spring"
+          },
+          {
+            "components": [
+              {
+                "description": "REST API для интеграций и внешних каналов",
+                "id": "20031",
+                "name": "Self-Service REST API",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.self_service_portal.rest_api",
+                  "rps": 8000,
+                  "error_rate": 0.01,
+                  "latency": 60,
+                  "technology": "HTTPS/REST"
+                },
+                "relationships": [
+                  {
+                    "description": "Sends service change request",
+                    "destinationId": "20040",
+                    "id": "20153",
+                    "sourceId": "20031",
+                    "technology": "Kafka"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Личный кабинет абонента (Frontend)",
+                "id": "20032",
+                "name": "Personal Cabinet UI",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.self_service_portal.ui",
+                  "rps": 5000,
+                  "error_rate": 0.01,
+                  "latency": 150,
+                  "technology": "React/Vue"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "React/Vue"
+              },
+              {
+                "description": "Управление подписками и услугами абонента",
+                "id": "20033",
+                "name": "Subscription Manager",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.self_service_portal.subscription_manager",
+                  "rps": 2000,
+                  "error_rate": 0.02,
+                  "latency": 80,
+                  "technology": "Java/Spring"
+                },
+                "relationships": [
+                  {
+                    "description": "Activates/deactivates service",
+                    "destinationId": "20240",
+                    "id": "20154",
+                    "sourceId": "20033",
+                    "technology": "HTTPS/REST"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Java/Spring"
+              }
+            ],
+            "description": "Портал самообслуживания абонентов — веб и мобильный каналы",
+            "id": "20030",
+            "name": "Self-Service Portal",
+            "properties": {
+              "structurizr.dsl.identifier": "crm.self_service_portal",
+              "rps": 8000,
+              "error_rate": 0.01,
+              "latency": 100,
+              "technology": "React/Java"
+            },
+            "relationships": [
+              {
+                "description": "Fetches subscriber profile",
+                "destinationId": "20210",
+                "id": "20210a",
+                "sourceId": "20030",
+                "technology": "gRPC"
+              },
+              {
+                "description": "Submits service order",
+                "destinationId": "20040",
+                "id": "20211",
+                "sourceId": "20030",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Fetches balance",
+                "destinationId": "20220",
+                "id": "20212",
+                "sourceId": "20030",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "20508",
+                "sourceId": "20030",
+                "destinationId": "20095",
+                "description": "Reads customer cache",
+                "technology": "Redis"
+              },
+              {
+                "id": "20514",
+                "sourceId": "20030",
+                "destinationId": "20140",
+                "description": "Fetches product catalog",
+                "technology": "gRPC"
+              },
+              {
+                "id": "20576",
+                "sourceId": "20030",
+                "destinationId": "20140",
+                "description": "Fetches available products",
+                "technology": "gRPC"
+              },
+              {
+                "id": "20577",
+                "sourceId": "20030",
+                "destinationId": "20110",
+                "description": "Checks loyalty balance",
+                "technology": "gRPC"
+              },
+              {
+                "id": "20578",
+                "sourceId": "20030",
+                "destinationId": "20150",
+                "description": "Searches orders",
+                "technology": "HTTP"
+              },
+              {
+                "id": "20579",
+                "sourceId": "20030",
+                "destinationId": "20330",
+                "description": "Validates user token",
+                "technology": "OIDC"
+              },
+              {
+                "id": "20580",
+                "sourceId": "20030",
+                "destinationId": "20290",
+                "description": "Sends portal metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "21004",
+                "sourceId": "20030",
+                "destinationId": "20060",
+                "description": "Handles web traffic via GW",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "21005",
+                "sourceId": "20030",
+                "destinationId": "20080",
+                "description": "Searches interaction history",
+                "technology": "HTTP"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "React/Java"
+          },
+          {
+            "components": [
+              {
+                "description": "Валидация и обогащение заказа",
+                "id": "20041",
+                "name": "Order Validator",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.order_manager.validator",
+                  "rps": 4000,
+                  "error_rate": 0.02,
+                  "latency": 30,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Оркестрация шагов исполнения заказа",
+                "id": "20042",
+                "name": "Order Orchestrator",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.order_manager.orchestrator",
+                  "rps": 3500,
+                  "error_rate": 0.015,
+                  "latency": 200,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Sends provisioning command",
+                    "destinationId": "20240",
+                    "id": "20155",
+                    "sourceId": "20042",
+                    "technology": "HTTPS/REST"
+                  },
+                  {
+                    "description": "Notifies billing about order",
+                    "destinationId": "20230",
+                    "id": "20156",
+                    "sourceId": "20042",
+                    "technology": "Kafka"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Хранение и отслеживание статусов заказов",
+                "id": "20043",
+                "name": "Order State Machine",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.order_manager.state_machine",
+                  "rps": 4000,
+                  "error_rate": 0.005,
+                  "latency": 10,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Persists order state",
+                    "destinationId": "20070",
+                    "id": "20157",
+                    "sourceId": "20043",
+                    "technology": "JDBC"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Компенсация и rollback при сбоях",
+                "id": "20044",
+                "name": "Saga Compensator",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.order_manager.saga_compensator",
+                  "rps": 100,
+                  "error_rate": 0.05,
+                  "latency": 500,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Управление жизненным циклом заказов — создание, оркестрация, исполнение",
+            "id": "20040",
+            "name": "Order Manager",
+            "properties": {
+              "structurizr.dsl.identifier": "crm.order_manager",
+              "rps": 4000,
+              "error_rate": 0.015,
+              "latency": 250,
+              "technology": "Go"
+            },
+            "relationships": [
+              {
+                "description": "Sends provisioning request",
+                "destinationId": "20240",
+                "id": "20220a",
+                "sourceId": "20040",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Notifies billing system about order",
+                "destinationId": "20230",
+                "id": "20221",
+                "sourceId": "20040",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Persists order records",
+                "destinationId": "20070",
+                "id": "20222",
+                "sourceId": "20040",
+                "technology": "JDBC"
+              },
+              {
+                "description": "Publishes order events",
+                "destinationId": "20090",
+                "id": "20223",
+                "sourceId": "20040",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Checks subscriber eligibility",
+                "destinationId": "20210",
+                "id": "20224",
+                "sourceId": "20040",
+                "technology": "gRPC"
+              },
+              {
+                "id": "20505",
+                "sourceId": "20040",
+                "destinationId": "20330",
+                "description": "Validates operator token",
+                "technology": "OIDC"
+              },
+              {
+                "id": "20510",
+                "sourceId": "20040",
+                "destinationId": "20140",
+                "description": "Fetches product details",
+                "technology": "gRPC"
+              },
+              {
+                "id": "20581",
+                "sourceId": "20040",
+                "destinationId": "20095",
+                "description": "Caches order status",
+                "technology": "Redis"
+              },
+              {
+                "id": "20582",
+                "sourceId": "20040",
+                "destinationId": "20110",
+                "description": "Updates loyalty on order",
+                "technology": "gRPC"
+              },
+              {
+                "id": "20583",
+                "sourceId": "20040",
+                "destinationId": "20280",
+                "description": "Sends order data to DWH",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20584",
+                "sourceId": "20040",
+                "destinationId": "20360",
+                "description": "Checks OCS for order eligibility",
+                "technology": "gRPC"
+              },
+              {
+                "id": "21006",
+                "sourceId": "20040",
+                "destinationId": "20060",
+                "description": "Order API via gateway",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "21007",
+                "sourceId": "20040",
+                "destinationId": "20070",
+                "description": "Reads existing orders",
+                "technology": "JDBC"
+              },
+              {
+                "id": "21008",
+                "sourceId": "20040",
+                "destinationId": "20095",
+                "description": "Caches order summary",
+                "technology": "Redis"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go"
+          },
+          {
+            "components": [
+              {
+                "description": "Шлюз входящих уведомлений от внешних систем",
+                "id": "20051",
+                "name": "Notification Ingress",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.notification_hub.ingress",
+                  "rps": 10000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Маршрутизация уведомлений по каналам",
+                "id": "20052",
+                "name": "Channel Router",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.notification_hub.channel_router",
+                  "rps": 10000,
+                  "error_rate": 0.005,
+                  "latency": 15,
+                  "technology": "Go"
+                },
+                "relationships": [
+                  {
+                    "description": "Sends push notification",
+                    "destinationId": "20260",
+                    "id": "20158",
+                    "sourceId": "20052",
+                    "technology": "HTTPS/REST"
+                  }
+                ],
+                "tags": "Element,Component",
+                "technology": "Go"
+              },
+              {
+                "description": "Трекинг доставки уведомлений",
+                "id": "20053",
+                "name": "Delivery Tracker",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.notification_hub.delivery_tracker",
+                  "rps": 5000,
+                  "error_rate": 0.01,
+                  "latency": 30,
+                  "technology": "Go"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "Go"
+              }
+            ],
+            "description": "Хаб уведомлений — рассылка статусных уведомлений клиентам по всем каналам",
+            "id": "20050",
+            "name": "Notification Hub",
+            "properties": {
+              "structurizr.dsl.identifier": "crm.notification_hub",
+              "rps": 10000,
+              "error_rate": 0.005,
+              "latency": 30,
+              "technology": "Go"
+            },
+            "relationships": [
+              {
+                "description": "Consumes order status events",
+                "destinationId": "20090",
+                "id": "20230a",
+                "sourceId": "20050",
+                "technology": "Kafka"
+              },
+              {
+                "description": "Sends SMS notifications",
+                "destinationId": "20270",
+                "id": "20231",
+                "sourceId": "20050",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Sends push notifications",
+                "destinationId": "20260",
+                "id": "20232",
+                "sourceId": "20050",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "20506",
+                "sourceId": "20050",
+                "destinationId": "20350",
+                "description": "Sends marketing events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20585",
+                "sourceId": "20050",
+                "destinationId": "20095",
+                "description": "Caches notification state",
+                "technology": "Redis"
+              },
+              {
+                "id": "20586",
+                "sourceId": "20050",
+                "destinationId": "20290",
+                "description": "Sends notification metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "20587",
+                "sourceId": "20050",
+                "destinationId": "20340",
+                "description": "Sends delivery logs to Lake",
+                "technology": "Kafka"
+              },
+              {
+                "id": "21009",
+                "sourceId": "20050",
+                "destinationId": "20070",
+                "description": "Reads notification templates",
+                "technology": "JDBC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go"
+          },
+          {
+            "description": "Реляционная БД CRM (заказы, обращения, история)",
+            "id": "20070",
+            "name": "CRM Database",
+            "properties": {
+              "structurizr.dsl.identifier": "crm.crm_db",
+              "rps": 15000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "PostgreSQL"
+            },
+            "relationships": [
+              {
+                "id": "20592",
+                "sourceId": "20070",
+                "destinationId": "20290",
+                "description": "Reports DB metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "21012",
+                "sourceId": "20070",
+                "destinationId": "20080",
+                "description": "Archives old records to ES",
+                "technology": "HTTP"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "PostgreSQL"
+          },
+          {
+            "description": "Хранилище истории взаимодействий (full-text search)",
+            "id": "20080",
+            "name": "Interaction Store",
+            "properties": {
+              "structurizr.dsl.identifier": "crm.interaction_store",
+              "rps": 5000,
+              "error_rate": 0.002,
+              "latency": 15,
+              "technology": "Elasticsearch"
+            },
+            "relationships": [
+              {
+                "id": "20600",
+                "sourceId": "20080",
+                "destinationId": "20290",
+                "description": "Reports ES metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "21013",
+                "sourceId": "20080",
+                "destinationId": "20095",
+                "description": "Caches frequent queries",
+                "technology": "Redis"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Elasticsearch"
+          },
+          {
+            "description": "Брокер событий CRM для асинхронных сообщений",
+            "id": "20090",
+            "name": "CRM Event Bus",
+            "properties": {
+              "structurizr.dsl.identifier": "crm.event_bus",
+              "rps": 20000,
+              "error_rate": 0.0005,
+              "latency": 5,
+              "technology": "Kafka"
+            },
+            "relationships": [
+              {
+                "id": "20601",
+                "sourceId": "20090",
+                "destinationId": "20340",
+                "description": "Archives events to Data Lake",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20602",
+                "sourceId": "20090",
+                "destinationId": "20290",
+                "description": "Reports Kafka metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "21014",
+                "sourceId": "20090",
+                "destinationId": "20280",
+                "description": "Streams events to DWH",
+                "technology": "Kafka"
+              },
+              {
+                "id": "21015",
+                "sourceId": "20090",
+                "destinationId": "20350",
+                "description": "Feeds campaign events",
+                "technology": "Kafka"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Kafka"
+          },
+          {
+            "description": "Redis-кэш для горячих данных клиентов",
+            "id": "20095",
+            "name": "Customer Cache",
+            "properties": {
+              "structurizr.dsl.identifier": "crm.customer_cache",
+              "rps": 30000,
+              "error_rate": 0.001,
+              "latency": 1,
+              "technology": "Redis"
+            },
+            "relationships": [
+              {
+                "id": "20591",
+                "sourceId": "20095",
+                "destinationId": "20210",
+                "description": "Hydrates cache from UCP",
+                "technology": "gRPC"
+              },
+              {
+                "id": "21016",
+                "sourceId": "20095",
+                "destinationId": "20070",
+                "description": "Hydrates from DB on miss",
+                "technology": "JDBC"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Redis"
+          },
+          {
+            "components": [
+              {
+                "description": "REST API для B2B интеграций",
+                "id": "20061",
+                "name": "B2B Integration API",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.api_gateway.b2b_api",
+                  "rps": 1000,
+                  "error_rate": 0.01,
+                  "latency": 60,
+                  "technology": "HTTPS/REST"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "description": "Авторизация входящих API-запросов",
+                "id": "20062",
+                "name": "API Auth Filter",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.api_gateway.auth_filter",
+                  "rps": 15000,
+                  "error_rate": 0.005,
+                  "latency": 10,
+                  "technology": "WAF"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "WAF"
+              },
+              {
+                "description": "Rate limiting и защита от DDoS",
+                "id": "20063",
+                "name": "Rate Limiter",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm.api_gateway.rate_limiter",
+                  "rps": 15000,
+                  "error_rate": 0.002,
+                  "latency": 2,
+                  "technology": "WAF"
+                },
+                "relationships": [],
+                "tags": "Element,Component",
+                "technology": "WAF"
+              }
+            ],
+            "description": "API Gateway — единая точка входа для всех внешних интеграций CRM",
+            "id": "20060",
+            "name": "API Gateway",
+            "properties": {
+              "structurizr.dsl.identifier": "crm.api_gateway",
+              "rps": 15000,
+              "error_rate": 0.005,
+              "latency": 15,
+              "technology": "WAF/Kong"
+            },
+            "relationships": [
+              {
+                "description": "Routes to CRM Core",
+                "destinationId": "20010",
+                "id": "20240a",
+                "sourceId": "20060",
+                "technology": "HTTPS"
+              },
+              {
+                "description": "Routes to Self-Service Portal",
+                "destinationId": "20030",
+                "id": "20241",
+                "sourceId": "20060",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "20511",
+                "sourceId": "20060",
+                "destinationId": "20330",
+                "description": "Validates auth token",
+                "technology": "OIDC"
+              },
+              {
+                "id": "20588",
+                "sourceId": "20060",
+                "destinationId": "20095",
+                "description": "Rate limit state in Redis",
+                "technology": "Redis"
+              },
+              {
+                "id": "20589",
+                "sourceId": "20060",
+                "destinationId": "20290",
+                "description": "Pushes API metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "20590",
+                "sourceId": "20060",
+                "destinationId": "20330",
+                "description": "Validates JWT tokens",
+                "technology": "OIDC"
+              },
+              {
+                "id": "21010",
+                "sourceId": "20060",
+                "destinationId": "20040",
+                "description": "Routes order requests",
+                "technology": "HTTPS"
+              },
+              {
+                "id": "21011",
+                "sourceId": "20060",
+                "destinationId": "20050",
+                "description": "Routes notification requests",
+                "technology": "HTTPS"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "WAF/Kong"
+          },
+          {
+            "id": "20100",
+            "name": "Customer Analytics",
+            "description": "Сервис аналитики клиентской базы",
+            "technology": "Python/Go",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Python/Go",
+              "structurizr.dsl.identifier": "crm.customer_analytics"
+            },
+            "components": [
+              {
+                "id": "20101",
+                "name": "Churn Predictor",
+                "description": "Предсказание оттока",
+                "technology": "Python/ML",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Python/ML",
+                  "structurizr.dsl.identifier": "crm.analytics.churn"
+                },
+                "relationships": [
+                  {
+                    "id": "20300",
+                    "sourceId": "20101",
+                    "destinationId": "20080",
+                    "description": "Reads interaction history",
+                    "technology": "HTTP"
+                  }
+                ]
+              },
+              {
+                "id": "20102",
+                "name": "NPS Calculator",
+                "description": "Расчёт NPS",
+                "technology": "Python",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Python",
+                  "structurizr.dsl.identifier": "crm.analytics.nps"
+                },
+                "relationships": [
+                  {
+                    "id": "20301",
+                    "sourceId": "20102",
+                    "destinationId": "20070",
+                    "description": "Reads survey results",
+                    "technology": "JDBC"
+                  }
+                ]
+              },
+              {
+                "id": "20103",
+                "name": "Segment Manager",
+                "description": "Управление сегментами",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "crm.analytics.segment"
+                },
+                "relationships": [
+                  {
+                    "id": "20302",
+                    "sourceId": "20103",
+                    "destinationId": "20280",
+                    "description": "Publishes segments",
+                    "technology": "Kafka"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "21200",
+                "sourceId": "20100",
+                "destinationId": "20080",
+                "description": "Reads interaction history",
+                "technology": "HTTP"
+              },
+              {
+                "id": "21201",
+                "sourceId": "20100",
+                "destinationId": "20070",
+                "description": "Reads order/customer data",
+                "technology": "JDBC"
+              },
+              {
+                "id": "21202",
+                "sourceId": "20100",
+                "destinationId": "20280",
+                "description": "Sends analytics results",
+                "technology": "Kafka"
+              },
+              {
+                "id": "21203",
+                "sourceId": "20100",
+                "destinationId": "20290",
+                "description": "Publishes metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "20550",
+                "sourceId": "20100",
+                "destinationId": "20095",
+                "description": "Caches analytics results",
+                "technology": "Redis"
+              },
+              {
+                "id": "20551",
+                "sourceId": "20100",
+                "destinationId": "20090",
+                "description": "Publishes analytics events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20552",
+                "sourceId": "20100",
+                "destinationId": "20210",
+                "description": "Enriches with subscriber profile",
+                "technology": "gRPC"
+              },
+              {
+                "id": "20553",
+                "sourceId": "20100",
+                "destinationId": "20340",
+                "description": "Sends raw data to Data Lake",
+                "technology": "Kafka"
+              },
+              {
+                "id": "21017",
+                "sourceId": "20100",
+                "destinationId": "20350",
+                "description": "Sends churn prediction to campaigns",
+                "technology": "HTTPS/REST"
+              }
+            ]
+          },
+          {
+            "id": "20110",
+            "name": "Loyalty Service",
+            "description": "Программа лояльности и бонусов",
+            "technology": "Java/Spring",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Java/Spring",
+              "structurizr.dsl.identifier": "crm.loyalty"
+            },
+            "components": [
+              {
+                "id": "20111",
+                "name": "Bonus Accrual Engine",
+                "description": "Начисление бонусов",
+                "technology": "Java",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Java",
+                  "structurizr.dsl.identifier": "crm.loyalty.accrual"
+                },
+                "relationships": [
+                  {
+                    "id": "20303",
+                    "sourceId": "20111",
+                    "destinationId": "20070",
+                    "description": "Saves accrual record",
+                    "technology": "JDBC"
+                  }
+                ]
+              },
+              {
+                "id": "20112",
+                "name": "Redemption Handler",
+                "description": "Списание бонусов",
+                "technology": "Java",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Java",
+                  "structurizr.dsl.identifier": "crm.loyalty.redemption"
+                },
+                "relationships": [
+                  {
+                    "id": "20304",
+                    "sourceId": "20112",
+                    "destinationId": "20220",
+                    "description": "Adjusts balance",
+                    "technology": "HTTPS/REST"
+                  }
+                ]
+              },
+              {
+                "id": "20113",
+                "name": "Tier Manager",
+                "description": "Управление уровнями лояльности",
+                "technology": "Java",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Java",
+                  "structurizr.dsl.identifier": "crm.loyalty.tier"
+                },
+                "relationships": [
+                  {
+                    "id": "20305",
+                    "sourceId": "20113",
+                    "destinationId": "20210",
+                    "description": "Reads subscriber profile",
+                    "technology": "gRPC"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "20410",
+                "sourceId": "20110",
+                "destinationId": "20220",
+                "description": "Adjusts subscriber balance",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "20411",
+                "sourceId": "20110",
+                "destinationId": "20090",
+                "description": "Consumes order events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20412",
+                "sourceId": "20110",
+                "destinationId": "20070",
+                "description": "Persists loyalty data",
+                "technology": "JDBC"
+              },
+              {
+                "id": "20413",
+                "sourceId": "20110",
+                "destinationId": "20270",
+                "description": "Sends bonus notification",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "20554",
+                "sourceId": "20110",
+                "destinationId": "20095",
+                "description": "Reads loyalty from cache",
+                "technology": "Redis"
+              },
+              {
+                "id": "20555",
+                "sourceId": "20110",
+                "destinationId": "20090",
+                "description": "Listens to service events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20556",
+                "sourceId": "20110",
+                "destinationId": "20100",
+                "description": "Sends loyalty metrics",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20557",
+                "sourceId": "20110",
+                "destinationId": "20350",
+                "description": "Sends loyalty campaign data",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "21018",
+                "sourceId": "20110",
+                "destinationId": "20100",
+                "description": "Sends loyalty events to analytics",
+                "technology": "Kafka"
+              },
+              {
+                "id": "21019",
+                "sourceId": "20110",
+                "destinationId": "20280",
+                "description": "Sends loyalty data to DWH",
+                "technology": "Kafka"
+              }
+            ]
+          },
+          {
+            "id": "20120",
+            "name": "Complaint Manager",
+            "description": "Управление жалобами",
+            "technology": "Java/Spring",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Java/Spring",
+              "structurizr.dsl.identifier": "crm.complaint_manager"
+            },
+            "components": [
+              {
+                "id": "20121",
+                "name": "Complaint Classifier",
+                "description": "Классификация жалоб",
+                "technology": "Java/ML",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Java/ML",
+                  "structurizr.dsl.identifier": "crm.complaint.classifier"
+                },
+                "relationships": [
+                  {
+                    "id": "20306",
+                    "sourceId": "20121",
+                    "destinationId": "20080",
+                    "description": "Reads similar cases",
+                    "technology": "HTTP"
+                  }
+                ]
+              },
+              {
+                "id": "20122",
+                "name": "Escalation Engine",
+                "description": "Эскалация по SLA",
+                "technology": "Java",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Java",
+                  "structurizr.dsl.identifier": "crm.complaint.escalation"
+                },
+                "relationships": [
+                  {
+                    "id": "20307",
+                    "sourceId": "20122",
+                    "destinationId": "20090",
+                    "description": "Publishes escalation event",
+                    "technology": "Kafka"
+                  }
+                ]
+              },
+              {
+                "id": "20123",
+                "name": "SLA Tracker",
+                "description": "Отслеживание SLA",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "crm.complaint.sla_tracker"
+                },
+                "relationships": [
+                  {
+                    "id": "20308",
+                    "sourceId": "20123",
+                    "destinationId": "20095",
+                    "description": "Caches SLA data",
+                    "technology": "Redis"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "20420",
+                "sourceId": "20120",
+                "destinationId": "20090",
+                "description": "Publishes complaint events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20421",
+                "sourceId": "20120",
+                "destinationId": "20070",
+                "description": "Persists complaint records",
+                "technology": "JDBC"
+              },
+              {
+                "id": "20422",
+                "sourceId": "20120",
+                "destinationId": "20050",
+                "description": "Triggers notification",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20423",
+                "sourceId": "20120",
+                "destinationId": "20250",
+                "description": "Checks fraud",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "20558",
+                "sourceId": "20120",
+                "destinationId": "20095",
+                "description": "Caches open complaints",
+                "technology": "Redis"
+              },
+              {
+                "id": "20559",
+                "sourceId": "20120",
+                "destinationId": "20210",
+                "description": "Fetches subscriber profile",
+                "technology": "gRPC"
+              },
+              {
+                "id": "20560",
+                "sourceId": "20120",
+                "destinationId": "20220",
+                "description": "Checks subscriber balance",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "20561",
+                "sourceId": "20120",
+                "destinationId": "20290",
+                "description": "Sends complaint SLA metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "21020",
+                "sourceId": "20120",
+                "destinationId": "20100",
+                "description": "Sends complaint analytics",
+                "technology": "Kafka"
+              },
+              {
+                "id": "21021",
+                "sourceId": "20120",
+                "destinationId": "20330",
+                "description": "Validates agent token",
+                "technology": "OIDC"
+              }
+            ]
+          },
+          {
+            "id": "20130",
+            "name": "Contract Service",
+            "description": "Управление договорами",
+            "technology": "Java/Spring",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Java/Spring",
+              "structurizr.dsl.identifier": "crm.contract_service"
+            },
+            "components": [
+              {
+                "id": "20131",
+                "name": "Contract Generator",
+                "description": "Генерация документов",
+                "technology": "Java",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Java",
+                  "structurizr.dsl.identifier": "crm.contract.generator"
+                },
+                "relationships": [
+                  {
+                    "id": "20309",
+                    "sourceId": "20131",
+                    "destinationId": "20070",
+                    "description": "Saves contract",
+                    "technology": "JDBC"
+                  }
+                ]
+              },
+              {
+                "id": "20132",
+                "name": "DocuSign Adapter",
+                "description": "Интеграция с DocuSign",
+                "technology": "Java",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Java",
+                  "structurizr.dsl.identifier": "crm.contract.docusign"
+                },
+                "relationships": [
+                  {
+                    "id": "20310",
+                    "sourceId": "20132",
+                    "destinationId": "20300",
+                    "description": "Sends for signing",
+                    "technology": "HTTPS/REST"
+                  }
+                ]
+              },
+              {
+                "id": "20133",
+                "name": "Contract State Machine",
+                "description": "ЖЦ договора",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "crm.contract.state"
+                },
+                "relationships": [
+                  {
+                    "id": "20311",
+                    "sourceId": "20133",
+                    "destinationId": "20090",
+                    "description": "Publishes contract events",
+                    "technology": "Kafka"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "20430",
+                "sourceId": "20130",
+                "destinationId": "20070",
+                "description": "Persists contract data",
+                "technology": "JDBC"
+              },
+              {
+                "id": "20431",
+                "sourceId": "20130",
+                "destinationId": "20300",
+                "description": "Sends to DocuSign",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "20432",
+                "sourceId": "20130",
+                "destinationId": "20090",
+                "description": "Publishes contract events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20433",
+                "sourceId": "20130",
+                "destinationId": "20210",
+                "description": "Fetches subscriber data",
+                "technology": "gRPC"
+              },
+              {
+                "id": "20562",
+                "sourceId": "20130",
+                "destinationId": "20095",
+                "description": "Caches active contracts",
+                "technology": "Redis"
+              },
+              {
+                "id": "20563",
+                "sourceId": "20130",
+                "destinationId": "20220",
+                "description": "Checks billing status",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "20564",
+                "sourceId": "20130",
+                "destinationId": "20280",
+                "description": "Sends contract data to DWH",
+                "technology": "Kafka"
+              },
+              {
+                "id": "21022",
+                "sourceId": "20130",
+                "destinationId": "20110",
+                "description": "Creates loyalty record on contract",
+                "technology": "gRPC"
+              },
+              {
+                "id": "21023",
+                "sourceId": "20130",
+                "destinationId": "20330",
+                "description": "Validates signature token",
+                "technology": "OIDC"
+              }
+            ]
+          },
+          {
+            "id": "20140",
+            "name": "Product Catalog",
+            "description": "Каталог продуктов и услуг",
+            "technology": "Go",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Go",
+              "structurizr.dsl.identifier": "crm.product_catalog"
+            },
+            "components": [
+              {
+                "id": "20141",
+                "name": "Product Fetcher",
+                "description": "Получение данных продуктов",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "crm.product_catalog.fetcher"
+                },
+                "relationships": [
+                  {
+                    "id": "20312",
+                    "sourceId": "20141",
+                    "destinationId": "20310",
+                    "description": "Fetches from BSS catalog",
+                    "technology": "HTTPS/REST"
+                  }
+                ]
+              },
+              {
+                "id": "20142",
+                "name": "Price Calculator",
+                "description": "Расчёт стоимости",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "crm.product_catalog.price"
+                },
+                "relationships": [
+                  {
+                    "id": "20313",
+                    "sourceId": "20142",
+                    "destinationId": "20220",
+                    "description": "Gets balance for discount",
+                    "technology": "HTTPS/REST"
+                  }
+                ]
+              },
+              {
+                "id": "20143",
+                "name": "Eligibility Checker",
+                "description": "Доступность продукта",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "crm.product_catalog.eligibility"
+                },
+                "relationships": [
+                  {
+                    "id": "20314",
+                    "sourceId": "20143",
+                    "destinationId": "20210",
+                    "description": "Checks subscriber eligibility",
+                    "technology": "gRPC"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "20440",
+                "sourceId": "20140",
+                "destinationId": "20310",
+                "description": "Fetches product list",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "20441",
+                "sourceId": "20140",
+                "destinationId": "20095",
+                "description": "Caches product catalog",
+                "technology": "Redis"
+              },
+              {
+                "id": "20442",
+                "sourceId": "20140",
+                "destinationId": "20090",
+                "description": "Publishes catalog update events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20565",
+                "sourceId": "20140",
+                "destinationId": "20280",
+                "description": "Sends product metrics to DWH",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20566",
+                "sourceId": "20140",
+                "destinationId": "20350",
+                "description": "Notifies campaign system of offers",
+                "technology": "HTTPS/REST"
+              },
+              {
+                "id": "20567",
+                "sourceId": "20140",
+                "destinationId": "20290",
+                "description": "Reports product usage metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "21024",
+                "sourceId": "20140",
+                "destinationId": "20100",
+                "description": "Sends product view events",
+                "technology": "Kafka"
+              }
+            ]
+          },
+          {
+            "id": "20150",
+            "name": "Search Service",
+            "description": "Полнотекстовый поиск",
+            "technology": "Go/Elasticsearch",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Go/Elasticsearch",
+              "structurizr.dsl.identifier": "crm.search_service"
+            },
+            "components": [
+              {
+                "id": "20151",
+                "name": "Customer Indexer",
+                "description": "Индексирование клиентов",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "crm.search.customer_idx"
+                },
+                "relationships": [
+                  {
+                    "id": "20315",
+                    "sourceId": "20151",
+                    "destinationId": "20080",
+                    "description": "Indexes customer data",
+                    "technology": "HTTP"
+                  }
+                ]
+              },
+              {
+                "id": "20152",
+                "name": "Order Indexer",
+                "description": "Индексирование заказов",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "crm.search.order_idx"
+                },
+                "relationships": [
+                  {
+                    "id": "20316",
+                    "sourceId": "20152",
+                    "destinationId": "20080",
+                    "description": "Indexes order data",
+                    "technology": "HTTP"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "20450",
+                "sourceId": "20150",
+                "destinationId": "20080",
+                "description": "Queries Elasticsearch",
+                "technology": "HTTP"
+              },
+              {
+                "id": "20451",
+                "sourceId": "20150",
+                "destinationId": "20090",
+                "description": "Consumes data change events",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20568",
+                "sourceId": "20150",
+                "destinationId": "20095",
+                "description": "Uses Redis for search cache",
+                "technology": "Redis"
+              },
+              {
+                "id": "20569",
+                "sourceId": "20150",
+                "destinationId": "20210",
+                "description": "Indexes subscriber profile updates",
+                "technology": "gRPC"
+              },
+              {
+                "id": "21025",
+                "sourceId": "20150",
+                "destinationId": "20100",
+                "description": "Sends search analytics",
+                "technology": "Kafka"
+              }
+            ]
+          },
+          {
+            "id": "20160",
+            "name": "Metrics Exporter",
+            "description": "Экспортёр метрик CRM",
+            "technology": "Prometheus/Go",
+            "tags": "Element,Container",
+            "properties": {
+              "rps": 5000,
+              "error_rate": 0.005,
+              "latency": 20,
+              "technology": "Prometheus/Go",
+              "structurizr.dsl.identifier": "crm.metrics"
+            },
+            "components": [
+              {
+                "id": "20161",
+                "name": "CRM Metrics Exporter",
+                "description": "Prometheus экспорт",
+                "technology": "Go",
+                "tags": "Element,Component",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.005,
+                  "latency": 20,
+                  "technology": "Go",
+                  "structurizr.dsl.identifier": "crm.metrics.exporter"
+                },
+                "relationships": [
+                  {
+                    "id": "20317",
+                    "sourceId": "20161",
+                    "destinationId": "20290",
+                    "description": "Pushes to BeeInside",
+                    "technology": "HTTP"
+                  }
+                ]
+              }
+            ],
+            "relationships": [
+              {
+                "id": "20460",
+                "sourceId": "20160",
+                "destinationId": "20290",
+                "description": "Pushes metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "20461",
+                "sourceId": "20160",
+                "destinationId": "20090",
+                "description": "Reads event metrics",
+                "technology": "Kafka"
+              },
+              {
+                "id": "20593",
+                "sourceId": "20160",
+                "destinationId": "20070",
+                "description": "Reads DB metrics",
+                "technology": "JDBC"
+              },
+              {
+                "id": "20594",
+                "sourceId": "20160",
+                "destinationId": "20080",
+                "description": "Reads ES metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "20595",
+                "sourceId": "20160",
+                "destinationId": "20095",
+                "description": "Reads Redis metrics",
+                "technology": "Redis"
+              },
+              {
+                "id": "20596",
+                "sourceId": "20160",
+                "destinationId": "20320",
+                "description": "Reports to Zabbix",
+                "technology": "SNMP/HTTP"
+              },
+              {
+                "id": "21026",
+                "sourceId": "20160",
+                "destinationId": "20100",
+                "description": "Reads analytics metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "21027",
+                "sourceId": "20160",
+                "destinationId": "20110",
+                "description": "Reads loyalty metrics",
+                "technology": "HTTP"
+              },
+              {
+                "id": "21028",
+                "sourceId": "20160",
+                "destinationId": "20120",
+                "description": "Reads complaint metrics",
+                "technology": "HTTP"
+              }
+            ]
+          }
+        ],
+        "description": "CRM-платформа и система управления заказами — обслуживание клиентов и обработка запросов на изменение услуг",
+        "id": "20010a",
+        "location": "Internal",
+        "name": "CRM Platform",
+        "properties": {
+          "structurizr.dsl.identifier": "crm",
+          "rps": 15000,
+          "error_rate": 0.01,
+          "latency": 100,
+          "technology": "Java/Go",
+          "cmdb": "CRM"
+        },
+        "relationships": [
+          {
+            "description": "Fetches subscriber profile data",
+            "destinationId": "20210",
+            "id": "20400",
+            "sourceId": "20010a",
+            "technology": "gRPC"
+          },
+          {
+            "description": "Fetches subscriber balance",
+            "destinationId": "20220",
+            "id": "20401",
+            "sourceId": "20010a",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "description": "Sends service activation to provisioning",
+            "destinationId": "20240",
+            "id": "20402",
+            "sourceId": "20010a",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "description": "Notifies billing about orders",
+            "destinationId": "20230",
+            "id": "20403",
+            "sourceId": "20010a",
+            "technology": "Kafka"
+          },
+          {
+            "description": "Checks fraud status",
+            "destinationId": "20250",
+            "id": "20404",
+            "sourceId": "20010a",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "description": "Sends notifications to subscribers",
+            "destinationId": "20270",
+            "id": "20405",
+            "sourceId": "20010a",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "id": "20500",
+            "sourceId": "20010a",
+            "destinationId": "20280",
+            "description": "Sends analytics data",
+            "technology": "Kafka"
+          },
+          {
+            "id": "20501",
+            "sourceId": "20010a",
+            "destinationId": "20290",
+            "description": "Pushes metrics",
+            "technology": "HTTP"
+          },
+          {
+            "id": "20502",
+            "sourceId": "20010a",
+            "destinationId": "20330",
+            "description": "Validates access tokens",
+            "technology": "OIDC"
+          },
+          {
+            "id": "20503",
+            "sourceId": "20010a",
+            "destinationId": "20350",
+            "description": "Sends campaign triggers",
+            "technology": "Kafka"
+          },
+          {
+            "id": "20504",
+            "sourceId": "20010a",
+            "destinationId": "20360",
+            "description": "Queries charge status",
+            "technology": "gRPC"
+          },
+          {
+            "id": "20597",
+            "sourceId": "20010a",
+            "destinationId": "20340",
+            "description": "Sends raw data to Data Lake",
+            "technology": "Kafka"
+          },
+          {
+            "id": "20598",
+            "sourceId": "20010a",
+            "destinationId": "20320",
+            "description": "System monitoring",
+            "technology": "SNMP/HTTP"
+          },
+          {
+            "id": "20599",
+            "sourceId": "20010a",
+            "destinationId": "20360",
+            "description": "Gets OCS charging status",
+            "technology": "gRPC"
+          },
+          {
+            "id": "21029",
+            "sourceId": "20010a",
+            "destinationId": "20110",
+            "description": "Checks loyalty status",
+            "technology": "gRPC"
+          },
+          {
+            "id": "21030",
+            "sourceId": "20010a",
+            "destinationId": "20120",
+            "description": "Escalates complaint",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "id": "21031",
+            "sourceId": "20010a",
+            "destinationId": "20130",
+            "description": "Creates contract",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "id": "21032",
+            "sourceId": "20010a",
+            "destinationId": "20140",
+            "description": "Fetches product catalog",
+            "technology": "gRPC"
+          },
+          {
+            "id": "21033",
+            "sourceId": "20010a",
+            "destinationId": "20150",
+            "description": "Searches customers",
+            "technology": "HTTP"
+          },
+          {
+            "id": "21034",
+            "sourceId": "20010a",
+            "destinationId": "20160",
+            "description": "Reports system metrics",
+            "technology": "HTTP"
+          },
+          {
+            "id": "21035",
+            "sourceId": "20010a",
+            "destinationId": "20230",
+            "description": "Sends billing notification",
+            "technology": "Kafka"
+          },
+          {
+            "id": "21036",
+            "sourceId": "20010a",
+            "destinationId": "20260",
+            "description": "Sends push notification",
+            "technology": "HTTPS/REST"
+          },
+          {
+            "id": "21037",
+            "sourceId": "20010a",
+            "destinationId": "20280",
+            "description": "Sends analytics to DWH",
+            "technology": "Kafka"
+          },
+          {
+            "id": "21038",
+            "sourceId": "20010a",
+            "destinationId": "20320",
+            "description": "Sends system alerts",
+            "technology": "SNMP/HTTP"
+          },
+          {
+            "id": "21039",
+            "sourceId": "20010a",
+            "destinationId": "20330",
+            "description": "Authenticates users via IAM",
+            "technology": "OIDC"
+          },
+          {
+            "id": "21040",
+            "sourceId": "20010a",
+            "destinationId": "20340",
+            "description": "Archives data to lake",
+            "technology": "Kafka"
+          },
+          {
+            "id": "21041",
+            "sourceId": "20010a",
+            "destinationId": "20350",
+            "description": "Sends campaign triggers",
+            "technology": "Kafka"
+          },
+          {
+            "id": "21042",
+            "sourceId": "20010a",
+            "destinationId": "20360",
+            "description": "Queries OCS for balance",
+            "technology": "gRPC"
+          }
+        ],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Unified Customer Profile — профиль абонента",
+        "id": "20210",
+        "location": "Internal",
+        "name": "Unified Customer Profile (UCP)",
+        "properties": {
+          "structurizr.dsl.identifier": "ucp_ext",
+          "rps": 30000,
+          "error_rate": 0.003,
+          "latency": 15,
+          "technology": "gRPC",
+          "cmdb": "UCP"
+        },
+        "relationships": [
+          {
+            "id": "21043",
+            "sourceId": "20210",
+            "destinationId": "20095",
+            "description": "Provides profile to cache",
+            "technology": "gRPC"
+          }
+        ],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Balance Manager — управление балансами абонентов",
+        "id": "20220",
+        "location": "Internal",
+        "name": "Balance Manager",
+        "properties": {
+          "structurizr.dsl.identifier": "bm_ext",
+          "rps": 80000,
+          "error_rate": 0.001,
+          "latency": 5,
+          "technology": "HTTPS/REST",
+          "cmdb": "BM"
+        },
+        "containers": [
+          {
+            "description": "Внешний OpenAPI BM",
+            "id": "20221",
+            "name": "[ext] BM OpenAPI",
+            "properties": {
+              "structurizr.dsl.identifier": "bm_ext.openapi",
+              "rps": 80000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "HTTPS/REST"
+            },
+            "relationships": [],
+            "tags": "Element,Container",
+            "technology": "HTTPS/REST"
+          }
+        ],
+        "relationships": [
+          {
+            "id": "21044",
+            "sourceId": "20220",
+            "destinationId": "20095",
+            "description": "Provides balance to cache",
+            "technology": "HTTPS/REST"
+          }
+        ],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Billing System (Ensemble/Atlant) — расчёт и выставление счетов",
+        "id": "20230",
+        "location": "External",
+        "name": "Billing System",
+        "properties": {
+          "structurizr.dsl.identifier": "billing_ext",
+          "rps": 5000,
+          "error_rate": 0.005,
+          "latency": 50,
+          "technology": "Kafka/HTTPS",
+          "cmdb": "BILLING"
+        },
+        "relationships": [
+          {
+            "id": "21045",
+            "sourceId": "20230",
+            "destinationId": "20090",
+            "description": "Publishes billing events",
+            "technology": "Kafka"
+          }
+        ],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Provisioning система — активация/деактивация услуг на сети",
+        "id": "20240",
+        "location": "Internal",
+        "name": "Network Provisioning System",
+        "properties": {
+          "structurizr.dsl.identifier": "provisioning_ext",
+          "rps": 2000,
+          "error_rate": 0.01,
+          "latency": 200,
+          "technology": "HTTPS/REST",
+          "cmdb": "PROVISIONING"
+        },
+        "relationships": [
+          {
+            "id": "21046",
+            "sourceId": "20240",
+            "destinationId": "20090",
+            "description": "Publishes provisioning events",
+            "technology": "Kafka"
+          }
+        ],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Anti-Fraud система — проверка на мошенничество",
+        "id": "20250",
+        "location": "Internal",
+        "name": "Anti-Fraud System",
+        "properties": {
+          "structurizr.dsl.identifier": "antifraud_ext",
+          "rps": 10000,
+          "error_rate": 0.002,
+          "latency": 30,
+          "technology": "HTTPS/REST",
+          "cmdb": "ANTIFRAUD"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "Push Notification Service — отправка push-уведомлений",
+        "id": "20260",
+        "location": "External",
+        "name": "Push Notification Service",
+        "properties": {
+          "structurizr.dsl.identifier": "push_ext",
+          "rps": 15000,
+          "error_rate": 0.03,
+          "latency": 100,
+          "technology": "HTTPS/REST",
+          "cmdb": "PUSH"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "description": "SMS Gateway — отправка SMS-уведомлений",
+        "id": "20270",
+        "location": "Internal",
+        "name": "SMS Gateway",
+        "properties": {
+          "structurizr.dsl.identifier": "sms_gw_ext",
+          "rps": 10000,
+          "error_rate": 0.02,
+          "latency": 80,
+          "technology": "HTTPS/REST",
+          "cmdb": "SMS_GW"
+        },
+        "relationships": [],
+        "tags": "Element,Software System"
+      },
+      {
+        "id": "20280",
+        "name": "Data Warehouse",
+        "description": "Хранилище аналитических данных",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "Kafka",
+          "structurizr.dsl.identifier": "dw_crm_ext",
+          "cmdb": "DW_CRM"
+        },
+        "relationships": []
+      },
+      {
+        "id": "20290",
+        "name": "Платформа наблюдаемости (BeeInside)",
+        "description": "Prometheus/Grafana",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "Prometheus/Grafana",
+          "structurizr.dsl.identifier": "beeinside_crm_ext",
+          "cmdb": "BEEINSIDE_CRM"
+        },
+        "relationships": []
+      },
+      {
+        "id": "20300",
+        "name": "DocuSign",
+        "description": "Сервис электронной подписи",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "HTTPS/REST",
+          "structurizr.dsl.identifier": "docusign_ext",
+          "cmdb": "DOCUSIGN"
+        },
+        "relationships": []
+      },
+      {
+        "id": "20310",
+        "name": "BSS Product Catalog",
+        "description": "BSS-каталог продуктов",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "HTTPS/REST",
+          "structurizr.dsl.identifier": "bss_catalog_crm_ext",
+          "cmdb": "BSS_CATALOG_CRM"
+        },
+        "relationships": []
+      },
+      {
+        "id": "20320",
+        "name": "Zabbix Monitoring",
+        "description": "Системный мониторинг",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "SNMP/HTTP",
+          "structurizr.dsl.identifier": "zabbix_crm_ext",
+          "cmdb": "ZABBIX_CRM"
+        },
+        "relationships": []
+      },
+      {
+        "id": "20330",
+        "name": "IAM Platform",
+        "description": "Платформа идентификации",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "OIDC",
+          "structurizr.dsl.identifier": "iam_crm_ext",
+          "cmdb": "IAM_CRM"
+        },
+        "relationships": []
+      },
+      {
+        "id": "20340",
+        "name": "Data Lake",
+        "description": "Архивное хранилище",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "Kafka",
+          "structurizr.dsl.identifier": "datalake_crm_ext",
+          "cmdb": "DATALAKE_CRM"
+        },
+        "relationships": []
+      },
+      {
+        "id": "20350",
+        "name": "Campaign Management",
+        "description": "Управление кампаниями",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "HTTPS/REST",
+          "structurizr.dsl.identifier": "campaign_ext",
+          "cmdb": "CAMPAIGN"
+        },
+        "relationships": []
+      },
+      {
+        "id": "20360",
+        "name": "Online Charging System (OCS)",
+        "description": "Система онлайн тарификации",
+        "location": "Internal",
+        "tags": "Element,Software System",
+        "properties": {
+          "rps": 1000,
+          "error_rate": 0.005,
+          "latency": 30,
+          "technology": "gRPC",
+          "structurizr.dsl.identifier": "ocs_crm_ext",
+          "cmdb": "OCS_CRM"
+        },
+        "relationships": []
+      }
+    ],
+    "deploymentNodes": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "20060",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "21001",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "crm_prod.k8s.apigw_node.apigw_pod.apigw_instance",
+                      "rps": 15000,
+                      "error_rate": 0.005,
+                      "latency": 15,
+                      "technology": "Docker"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Routes to CRM Core",
+                        "destinationId": "21010",
+                        "id": "21100",
+                        "linkedRelationshipId": "20240a",
+                        "sourceId": "21001",
+                        "technology": "HTTPS"
+                      },
+                      {
+                        "description": "Routes to Self-Service Portal",
+                        "destinationId": "21020",
+                        "id": "21101",
+                        "linkedRelationshipId": "20241",
+                        "sourceId": "21001",
+                        "technology": "HTTPS"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "21000",
+                "instances": "1",
+                "name": "api-gateway-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm_prod.k8s.apigw_node.apigw_pod",
+                  "image": "crm/api-gateway",
+                  "rps": 15000,
+                  "error_rate": 0.005,
+                  "latency": 15,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "20999",
+            "instances": "3",
+            "name": "api-gateway-node",
+            "properties": {
+              "structurizr.dsl.identifier": "crm_prod.k8s.apigw_node",
+              "flavor": "4cpu8ram",
+              "rps": 15000,
+              "error_rate": 0.005,
+              "latency": 15,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "20010",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "21010",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "crm_prod.k8s.crm_core_node.crm_core_pod.crm_core_instance",
+                      "rps": 3000,
+                      "error_rate": 0.01,
+                      "latency": 100,
+                      "technology": "Docker"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Creates order",
+                        "destinationId": "21030",
+                        "id": "21102",
+                        "linkedRelationshipId": "20201",
+                        "sourceId": "21010",
+                        "technology": "Kafka"
+                      },
+                      {
+                        "description": "Persists interaction data",
+                        "destinationId": "21060",
+                        "id": "21103",
+                        "linkedRelationshipId": "20204",
+                        "sourceId": "21010",
+                        "technology": "HTTP"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "21009",
+                "instances": "1",
+                "name": "crm-core-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm_prod.k8s.crm_core_node.crm_core_pod",
+                  "image": "crm/crm-core",
+                  "rps": 3000,
+                  "error_rate": 0.01,
+                  "latency": 100,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "21008",
+            "instances": "4",
+            "name": "crm-core-node",
+            "properties": {
+              "structurizr.dsl.identifier": "crm_prod.k8s.crm_core_node",
+              "flavor": "8cpu16ram",
+              "rps": 3000,
+              "error_rate": 0.01,
+              "latency": 100,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "20030",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "21020",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "crm_prod.k8s.portal_node.portal_pod.portal_instance",
+                      "rps": 8000,
+                      "error_rate": 0.01,
+                      "latency": 100,
+                      "technology": "Docker"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Submits order",
+                        "destinationId": "21030",
+                        "id": "21104",
+                        "linkedRelationshipId": "20211",
+                        "sourceId": "21020",
+                        "technology": "Kafka"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "21019",
+                "instances": "1",
+                "name": "self-service-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm_prod.k8s.portal_node.portal_pod",
+                  "image": "crm/self-service-portal",
+                  "rps": 8000,
+                  "error_rate": 0.01,
+                  "latency": 100,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "21018",
+            "instances": "5",
+            "name": "self-service-node",
+            "properties": {
+              "structurizr.dsl.identifier": "crm_prod.k8s.portal_node",
+              "flavor": "8cpu16ram",
+              "rps": 8000,
+              "error_rate": 0.01,
+              "latency": 100,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "20040",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "21030",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "crm_prod.k8s.order_node.order_pod.order_instance",
+                      "rps": 4000,
+                      "error_rate": 0.015,
+                      "latency": 250,
+                      "technology": "Docker"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Persists order",
+                        "destinationId": "21050",
+                        "id": "21105",
+                        "linkedRelationshipId": "20222",
+                        "sourceId": "21030",
+                        "technology": "JDBC"
+                      },
+                      {
+                        "description": "Publishes event",
+                        "destinationId": "21070",
+                        "id": "21106",
+                        "linkedRelationshipId": "20223",
+                        "sourceId": "21030",
+                        "technology": "Kafka"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "21029",
+                "instances": "1",
+                "name": "order-manager-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm_prod.k8s.order_node.order_pod",
+                  "image": "crm/order-manager",
+                  "rps": 4000,
+                  "error_rate": 0.015,
+                  "latency": 250,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "21028",
+            "instances": "4",
+            "name": "order-manager-node",
+            "properties": {
+              "structurizr.dsl.identifier": "crm_prod.k8s.order_node",
+              "flavor": "8cpu16ram",
+              "rps": 4000,
+              "error_rate": 0.015,
+              "latency": 250,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "20070",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "21050",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "crm_prod.k8s.db_node.db_instance",
+                  "rps": 15000,
+                  "error_rate": 0.001,
+                  "latency": 5,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "21049",
+            "instances": "3",
+            "name": "crm-db-node (Patroni)",
+            "properties": {
+              "structurizr.dsl.identifier": "crm_prod.k8s.db_node",
+              "flavor": "16cpu64ram",
+              "image": "postgres:14",
+              "rps": 15000,
+              "error_rate": 0.001,
+              "latency": 5,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "20080",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "21060",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "crm_prod.k8s.es_node.es_instance",
+                  "rps": 5000,
+                  "error_rate": 0.002,
+                  "latency": 15,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "21059",
+            "instances": "3",
+            "name": "elasticsearch-node",
+            "properties": {
+              "structurizr.dsl.identifier": "crm_prod.k8s.es_node",
+              "flavor": "16cpu32ram",
+              "image": "elasticsearch:8",
+              "rps": 5000,
+              "error_rate": 0.002,
+              "latency": 15,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "20090",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "21070",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "crm_prod.k8s.kafka_node.kafka_instance",
+                  "rps": 20000,
+                  "error_rate": 0.0005,
+                  "latency": 5,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "21069",
+            "instances": "3",
+            "name": "kafka-node",
+            "properties": {
+              "structurizr.dsl.identifier": "crm_prod.k8s.kafka_node",
+              "flavor": "16cpu32ram",
+              "image": "bitnami/kafka",
+              "rps": 20000,
+              "error_rate": 0.0005,
+              "latency": 5,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "containerInstances": [
+              {
+                "containerId": "20095",
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "id": "21080",
+                "instanceId": 1,
+                "properties": {
+                  "structurizr.dsl.identifier": "crm_prod.k8s.redis_node.redis_instance",
+                  "rps": 30000,
+                  "error_rate": 0.001,
+                  "latency": 1,
+                  "technology": "Docker"
+                },
+                "relationships": [],
+                "tags": "Container Instance"
+              }
+            ],
+            "environment": "Production",
+            "id": "21079",
+            "instances": "3",
+            "name": "redis-node (Sentinel)",
+            "properties": {
+              "structurizr.dsl.identifier": "crm_prod.k8s.redis_node",
+              "flavor": "8cpu32ram",
+              "image": "redis:7",
+              "rps": 30000,
+              "error_rate": 0.001,
+              "latency": 1,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "20050",
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "id": "21090",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "crm_prod.k8s.notif_node.notif_pod.notif_instance",
+                      "rps": 10000,
+                      "error_rate": 0.005,
+                      "latency": 30,
+                      "technology": "Docker"
+                    },
+                    "relationships": [],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "21089",
+                "instances": "1",
+                "name": "notification-hub-pod",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm_prod.k8s.notif_node.notif_pod",
+                  "image": "crm/notification-hub",
+                  "rps": 10000,
+                  "error_rate": 0.005,
+                  "latency": 30,
+                  "technology": "Docker"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Docker"
+              }
+            ],
+            "environment": "Production",
+            "id": "21088",
+            "instances": "3",
+            "name": "notification-hub-node",
+            "properties": {
+              "structurizr.dsl.identifier": "crm_prod.k8s.notif_node",
+              "flavor": "4cpu8ram",
+              "rps": 10000,
+              "error_rate": 0.005,
+              "latency": 30,
+              "technology": "VM"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "infrastructureNodes": [
+              {
+                "description": "WAF для защиты внешнего трафика CRM",
+                "environment": "Production",
+                "id": "21095",
+                "name": "CRM WAF",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm_prod.k8s.infra.crm_waf",
+                  "rps": 20000,
+                  "error_rate": 0.003,
+                  "latency": 5,
+                  "technology": "WAF"
+                },
+                "relationships": [
+                  {
+                    "description": "Forwards clean traffic",
+                    "destinationId": "21001",
+                    "id": "21110",
+                    "sourceId": "21095",
+                    "technology": "HTTPS"
+                  }
+                ],
+                "tags": "Element,Infrastructure Node",
+                "technology": "WAF"
+              },
+              {
+                "description": "Ingress Controller (Nginx) для CRM",
+                "environment": "Production",
+                "id": "21096",
+                "name": "CRM Nginx Ingress",
+                "properties": {
+                  "structurizr.dsl.identifier": "crm_prod.k8s.infra.crm_ingress",
+                  "rps": 20000,
+                  "error_rate": 0.001,
+                  "latency": 2,
+                  "technology": "Nginx"
+                },
+                "relationships": [],
+                "tags": "Element,Infrastructure Node",
+                "technology": "Nginx"
+              },
+              {
+                "id": "21097",
+                "name": "CRM Prometheus Pushgateway",
+                "description": "Prometheus PushGateway CRM",
+                "technology": "Prometheus",
+                "environment": "Production",
+                "tags": "Element,Infrastructure Node",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.002,
+                  "latency": 3,
+                  "technology": "Prometheus",
+                  "structurizr.dsl.identifier": "crm_prod.k8s.infra.pushgw"
+                },
+                "relationships": [
+                  {
+                    "id": "21098",
+                    "sourceId": "21097",
+                    "destinationId": "21161",
+                    "description": "Forwards metrics",
+                    "technology": "HTTP"
+                  }
+                ]
+              },
+              {
+                "id": "21099",
+                "name": "CRM Istio Service Mesh",
+                "description": "Istio sidecar mesh CRM",
+                "technology": "Istio",
+                "environment": "Production",
+                "tags": "Element,Infrastructure Node",
+                "properties": {
+                  "rps": 5000,
+                  "error_rate": 0.002,
+                  "latency": 3,
+                  "technology": "Istio",
+                  "structurizr.dsl.identifier": "crm_prod.k8s.infra.istio"
+                },
+                "relationships": []
+              }
+            ],
+            "environment": "Production",
+            "id": "21094",
+            "instances": "1",
+            "name": "CRM Infrastructure",
+            "properties": {
+              "structurizr.dsl.identifier": "crm_prod.k8s.infra",
+              "rps": 20000,
+              "error_rate": 0.001,
+              "latency": 2,
+              "technology": "Kubernetes"
+            },
+            "tags": "Element,Deployment Node"
+          },
+          {
+            "id": "21100",
+            "name": "analytics-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "3",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "crm_prod.k8s.analytics_node",
+              "flavor": "16cpu32ram"
+            },
+            "children": [
+              {
+                "id": "21101",
+                "name": "analytics-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "crm_prod.k8s.analytics_node.pod",
+                  "image": "crm/customer-analytics"
+                },
+                "containerInstances": [
+                  {
+                    "id": "21102",
+                    "containerId": "20100",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 2000,
+                      "error_rate": 0.005,
+                      "latency": 100,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_21102"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "21110",
+            "name": "loyalty-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "4",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "crm_prod.k8s.loyalty_node",
+              "flavor": "8cpu16ram"
+            },
+            "children": [
+              {
+                "id": "21111",
+                "name": "loyalty-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "crm_prod.k8s.loyalty_node.pod",
+                  "image": "crm/loyalty-service"
+                },
+                "containerInstances": [
+                  {
+                    "id": "21112",
+                    "containerId": "20110",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 5000,
+                      "error_rate": 0.005,
+                      "latency": 50,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_21112"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "21120",
+            "name": "complaint-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "3",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "crm_prod.k8s.complaint_node",
+              "flavor": "8cpu16ram"
+            },
+            "children": [
+              {
+                "id": "21121",
+                "name": "complaint-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "crm_prod.k8s.complaint_node.pod",
+                  "image": "crm/complaint-manager"
+                },
+                "containerInstances": [
+                  {
+                    "id": "21122",
+                    "containerId": "20120",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 500,
+                      "error_rate": 0.01,
+                      "latency": 200,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_21122"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "21130",
+            "name": "contract-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "2",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "crm_prod.k8s.contract_node",
+              "flavor": "8cpu16ram"
+            },
+            "children": [
+              {
+                "id": "21131",
+                "name": "contract-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "crm_prod.k8s.contract_node.pod",
+                  "image": "crm/contract-service"
+                },
+                "containerInstances": [
+                  {
+                    "id": "21132",
+                    "containerId": "20130",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 200,
+                      "error_rate": 0.01,
+                      "latency": 300,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_21132"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "21140",
+            "name": "product-catalog-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "3",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "crm_prod.k8s.product_catalog_node",
+              "flavor": "4cpu8ram"
+            },
+            "children": [
+              {
+                "id": "21141",
+                "name": "product-catalog-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "crm_prod.k8s.product_catalog_node.pod",
+                  "image": "crm/product-catalog"
+                },
+                "containerInstances": [
+                  {
+                    "id": "21142",
+                    "containerId": "20140",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 3000,
+                      "error_rate": 0.005,
+                      "latency": 30,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_21142"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "21150",
+            "name": "search-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "3",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "crm_prod.k8s.search_node",
+              "flavor": "8cpu16ram"
+            },
+            "children": [
+              {
+                "id": "21151",
+                "name": "search-pod",
+                "environment": "Production",
+                "technology": "Docker",
+                "tags": "Element,Deployment Node",
+                "instances": "1",
+                "properties": {
+                  "rps": 1000,
+                  "error_rate": 0.002,
+                  "latency": 5,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "crm_prod.k8s.search_node.pod",
+                  "image": "crm/search-service"
+                },
+                "containerInstances": [
+                  {
+                    "id": "21152",
+                    "containerId": "20150",
+                    "instanceId": 1,
+                    "deploymentGroups": [
+                      "Default"
+                    ],
+                    "environment": "Production",
+                    "tags": "Container Instance",
+                    "properties": {
+                      "rps": 8000,
+                      "error_rate": 0.003,
+                      "latency": 30,
+                      "technology": "Docker",
+                      "structurizr.dsl.identifier": "inst_21152"
+                    },
+                    "relationships": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "21160",
+            "name": "metrics-node",
+            "environment": "Production",
+            "technology": "VM",
+            "tags": "Element,Deployment Node",
+            "instances": "1",
+            "properties": {
+              "rps": 1000,
+              "error_rate": 0.002,
+              "latency": 5,
+              "technology": "VM",
+              "structurizr.dsl.identifier": "crm_prod.k8s.metrics_node",
+              "flavor": "2cpu4ram"
+            },
+            "containerInstances": [
+              {
+                "id": "21161",
+                "containerId": "20160",
+                "instanceId": 1,
+                "deploymentGroups": [
+                  "Default"
+                ],
+                "environment": "Production",
+                "tags": "Container Instance",
+                "properties": {
+                  "rps": 200,
+                  "error_rate": 0.001,
+                  "latency": 10,
+                  "technology": "Docker",
+                  "structurizr.dsl.identifier": "inst_21161"
+                },
+                "relationships": []
+              }
+            ]
+          }
+        ],
+        "environment": "Production",
+        "id": "20998",
+        "instances": "1",
+        "name": "CRM Kubernetes Cluster",
+        "properties": {
+          "structurizr.dsl.identifier": "crm_prod.k8s",
+          "rps": 15000,
+          "error_rate": 0.01,
+          "latency": 10,
+          "technology": "Kubernetes"
+        },
+        "tags": "Element,Deployment Node",
+        "technology": "Kubernetes"
+      },
+      {
+        "environment": "Production",
+        "id": "20997",
+        "instances": "1",
+        "name": "CRM Production Platform",
+        "properties": {
+          "structurizr.dsl.identifier": "crm_prod",
+          "rps": 15000,
+          "error_rate": 0.01,
+          "latency": 5,
+          "technology": "OpenStack"
+        },
+        "tags": "Element,Deployment Node",
+        "technology": "OpenStack",
+        "children": []
+      }
+    ]
+  },
+  "name": "CRM",
+  "views": {
+    "configuration": {
+      "styles": {
+        "elements": [],
+        "relationships": []
+      }
+    }
+  }
+}
