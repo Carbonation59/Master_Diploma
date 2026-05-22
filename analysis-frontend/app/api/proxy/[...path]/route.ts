@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const maxDuration = 3000;
+
 const TARGET_BASE = process.env.API_URL || 'http://gateway:8080';
 
 export async function GET(request: NextRequest) {
@@ -37,6 +39,7 @@ async function proxyRequest(request: NextRequest, method: string) {
       method,
       headers,
       body,
+      signal: AbortSignal.timeout(3_000_000),
     });
 
     const data = await response.text();

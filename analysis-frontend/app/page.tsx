@@ -21,6 +21,19 @@ const nodeColorMap: Record<string, string> = {
 };
 const defaultColor = '#9467bd';
 
+function downloadJSON(data: any, filename: string) {
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function parseGraphData(graph: any) {
   if (!graph?.nodes || !Array.isArray(graph.nodes)) return null;
 
@@ -299,14 +312,22 @@ export default function HomePage() {
   
         return (
           <div className="mt-4">
-            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-              <h3 className="font-semibold text-lg mb-1">Обнаружены циклические зависимости</h3>
-              <p className="text-sm text-gray-700">
-                Циклические зависимости между элементами архитектуры могут приводить к проблемам:
-                усложнению тестирования, невозможности независимого развёртывания, 
-                снижению гибкости при замене компонентов. Рекомендуется разорвать циклы, 
-                введя дополнительные абстракции или инвертировав зависимости.
-              </p>
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded flex justify-between items-start">
+              <div>
+                <h3 className="font-semibold text-lg mb-1">Обнаружены циклические зависимости</h3>
+                <p className="text-sm text-gray-700">
+                  Циклические зависимости между элементами архитектуры могут приводить к проблемам:
+                  усложнению тестирования, невозможности независимого развёртывания, 
+                  снижению гибкости при замене компонентов. Рекомендуется разорвать циклы, 
+                  введя дополнительные абстракции или инвертировав зависимости.
+                </p>
+              </div>
+              <button
+                onClick={() => downloadJSON(data, 'cycles_report.json')}
+                className="ml-4 text-sm bg-white px-3 py-1 rounded border hover:bg-gray-100 whitespace-nowrap"
+              >
+                ⬇ Скачать JSON
+              </button>
             </div>
   
             {cycles.map((cycle: any, idx: number) => {
@@ -380,14 +401,22 @@ export default function HomePage() {
 
         return (
           <div className="mt-4">
-            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-              <h3 className="font-semibold text-lg mb-1">Обнаружены единые точки отказа</h3>
-              <p className="text-sm text-gray-700">
-                Единая точка отказа (Single Point of Failure) – это узел, выход из строя которого
-                приводит к нарушению связности всей системы или её критической части. Такие узлы
-                снижают отказоустойчивость и должны быть устранены путём введения дублирования
-                или перестроения архитектуры.
-              </p>
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded flex justify-between items-start">
+              <div>
+                <h3 className="font-semibold text-lg mb-1">Обнаружены единые точки отказа</h3>
+                <p className="text-sm text-gray-700">
+                  Единая точка отказа (Single Point of Failure) – это узел, выход из строя которого
+                  приводит к нарушению связности всей системы или её критической части. Такие узлы
+                  снижают отказоустойчивость и должны быть устранены путём введения дублирования
+                  или перестроения архитектуры.
+                </p>
+              </div>
+              <button
+                onClick={() => downloadJSON(data, 'singlepoints_report.json')}
+                className="ml-4 text-sm bg-white px-3 py-1 rounded border hover:bg-gray-100 whitespace-nowrap"
+              >
+                ⬇ Скачать JSON
+              </button>
             </div>
 
             <div className="overflow-x-auto">
@@ -465,14 +494,22 @@ export default function HomePage() {
 
         return (
           <div className="mt-4">
-            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-              <h3 className="font-semibold text-lg mb-1">Обнаружены «божественные объекты»</h3>
-              <p className="text-sm text-gray-700">
-                «Божественный объект» (God Object) – это элемент, который имеет чрезмерно много связей
-                с другими частями системы. Такие узлы нарушают принцип единственной ответственности,
-                усложняют сопровождение и тестирование, становятся узким местом при изменениях.
-                Рекомендуется разделить их на более мелкие компоненты с чёткой ответственностью.
-              </p>
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded flex justify-between items-start">
+              <div>
+                <h3 className="font-semibold text-lg mb-1">Обнаружены «божественные объекты»</h3>
+                <p className="text-sm text-gray-700">
+                  «Божественный объект» (God Object) – это элемент, который имеет чрезмерно много связей
+                  с другими частями системы. Такие узлы нарушают принцип единственной ответственности,
+                  усложняют сопровождение и тестирование, становятся узким местом при изменениях.
+                  Рекомендуется разделить их на более мелкие компоненты с чёткой ответственностью.
+                </p>
+              </div>
+              <button
+                onClick={() => downloadJSON(data, 'godelements_report.json')}
+                className="ml-4 text-sm bg-white px-3 py-1 rounded border hover:bg-gray-100 whitespace-nowrap"
+              >
+                ⬇ Скачать JSON
+              </button>
             </div>
 
             {averageDegree > 0 && (
@@ -599,14 +636,22 @@ export default function HomePage() {
         return (
           <div className="mt-4">
             {/* Описание проверки */}
-            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-              <h3 className="font-semibold text-lg mb-1">Анализ пропускной способности пути</h3>
-              <p className="text-sm text-gray-700">
-                Данный анализ показывает путь между заданными компонентами и вычисляет совокупные
-                характеристики производительности: минимальную пропускную способность (RPS),
-                общую вероятность ошибки и суммарную задержку. Это помогает выявить узкие места,
-                которые ограничивают скорость, надёжность или время отклика цепочки взаимодействий.
-              </p>
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded flex justify-between items-start">
+              <div>
+                <h3 className="font-semibold text-lg mb-1">Анализ пропускной способности пути</h3>
+                <p className="text-sm text-gray-700">
+                  Данный анализ показывает путь между заданными компонентами и вычисляет совокупные
+                  характеристики производительности: минимальную пропускную способность (RPS),
+                  общую вероятность ошибки и суммарную задержку. Это помогает выявить узкие места,
+                  которые ограничивают скорость, надёжность или время отклика цепочки взаимодействий.
+                </p>
+              </div>
+              <button
+                onClick={() => downloadJSON(data, 'pathcapacity_report.json')}
+                className="ml-4 text-sm bg-white px-3 py-1 rounded border hover:bg-gray-100 whitespace-nowrap"
+              >
+                ⬇ Скачать JSON
+              </button>
             </div>
 
             {/* Сводка итоговых метрик */}
@@ -735,17 +780,25 @@ export default function HomePage() {
 
         return (
           <div className="mt-4">
-            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-              <h3 className="font-semibold text-lg mb-1">
-                Обнаружена критическая инфраструктура (общие узлы развёртывания)
-              </h3>
-              <p className="text-sm text-gray-700">
-                Обнаружены узлы развёртывания, на которых размещены компоненты нескольких
-                различных систем. Отказ такого узла может одновременно нарушить работу
-                всех зависимых систем, создавая неприемлемый риск для всей инфраструктуры.
-                Это не классическая единая точка отказа на уровне логических зависимостей,
-                а риск совместного размещения, который необходимо контролировать.
-              </p>
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded flex justify-between items-start">
+              <div>
+                <h3 className="font-semibold text-lg mb-1">
+                  Обнаружена критическая инфраструктура (общие узлы развёртывания)
+                </h3>
+                <p className="text-sm text-gray-700">
+                  Обнаружены узлы развёртывания, на которых размещены компоненты нескольких
+                  различных систем. Отказ такого узла может одновременно нарушить работу
+                  всех зависимых систем, создавая неприемлемый риск для всей инфраструктуры.
+                  Это не классическая единая точка отказа на уровне логических зависимостей,
+                  а риск совместного размещения, который необходимо контролировать.
+                </p>
+              </div>
+              <button
+                onClick={() => downloadJSON(data, 'criticalinfrastructure_report.json')}
+                className="ml-4 text-sm bg-white px-3 py-1 rounded border hover:bg-gray-100 whitespace-nowrap"
+              >
+                ⬇ Скачать JSON
+              </button>
             </div>
 
             {/* Информация о системах */}
@@ -858,17 +911,25 @@ export default function HomePage() {
         return (
           <div className="mt-4">
             {/* Описание антипаттерна */}
-            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-              <h3 className="font-semibold text-lg mb-1">
-                Обнаружено нарушение периметра развёртывания
-              </h3>
-              <p className="text-sm text-gray-700">
-                В сетевой зоне <strong>{deploymentNodeIdentifier || 'указанный узел'}</strong> найдены
-                компоненты, которые не обладают необходимыми технологиями (например, WAF).
-                Это означает, что трафик может проходить в обход защитных средств, создавая угрозу
-                безопасности. Все компоненты, развёрнутые в DMZ или иных контролируемых зонах,
-                должны взаимодействовать с внешними сетями только через заданные технологии защиты.
-              </p>
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded flex justify-between items-start">
+              <div>
+                <h3 className="font-semibold text-lg mb-1">
+                  Обнаружено нарушение периметра развёртывания
+                </h3>
+                <p className="text-sm text-gray-700">
+                  В сетевой зоне <strong>{deploymentNodeIdentifier || 'указанный узел'}</strong> найдены
+                  компоненты, которые не обладают необходимыми технологиями (например, WAF).
+                  Это означает, что трафик может проходить в обход защитных средств, создавая угрозу
+                  безопасности. Все компоненты, развёрнутые в DMZ или иных контролируемых зонах,
+                  должны взаимодействовать с внешними сетями только через заданные технологии защиты.
+                </p>
+              </div>
+              <button
+                onClick={() => downloadJSON(data, 'perimeterviolation_report.json')}
+                className="ml-4 text-sm bg-white px-3 py-1 rounded border hover:bg-gray-100 whitespace-nowrap"
+              >
+                ⬇ Скачать JSON
+              </button>
             </div>
 
             {/* Таблица найденных нарушителей */}
