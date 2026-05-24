@@ -1074,7 +1074,7 @@ export default function HomePage() {
   return (
     <main className="max-w-4xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-4 text-center">
-        Выпускная квалификационная работа магистра на тему «Метод анализа архитектуры программного обеспечения на поиск уязвимостей»
+        Выпускная квалификационная работа на тему «Метод анализа архитектуры программного обеспечения на поиск уязвимостей»
       </h1>
 
       <div className="flex space-x-4 mb-6 border-b pb-2 relative">
