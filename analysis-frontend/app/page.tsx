@@ -14,7 +14,7 @@ const nodeColorMap: Record<string, string> = {
   Container: '#32cd32',
   Component: '#ff7f0e',
   Element: '#d62728',
-  SoftwareSystem: '#ffff00',
+  SoftwareSystem: '#6200ff',
   DeploymentNode: '#964b00',
   InfrastructureNode: '#42aaff',
   ContainerInstance: '#ffc0cb',
@@ -514,7 +514,7 @@ export default function HomePage() {
 
             {averageDegree > 0 && (
               <p className="text-sm text-gray-600 mb-3">
-                Среднее количество связей по всем узлам графа: <strong>{averageDegree.toFixed(1)}</strong>
+                Целевое количество связей: <strong>{averageDegree.toFixed(1)}</strong>
               </p>
             )}
 
@@ -575,6 +575,32 @@ export default function HomePage() {
               Выделите подсистемы, примените паттерны «Фасад» или «Посредник» для уменьшения количества
               прямых зависимостей.
             </div>
+
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded text-sm text-gray-700">
+              <strong>Плюсы устранения антипаттерна:</strong>
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>
+                  <strong>Улучшение сопровождаемости</strong> — компоненты с меньшим числом зависимостей
+                  проще понять, изменить и протестировать изолированно.
+                </li>
+                <li>
+                  <strong>Снижение риска каскадных изменений</strong> — модификация декомпозированного
+                  компонента затрагивает меньшее число других частей системы.
+                </li>
+                <li>
+                  <strong>Повышение тестируемости</strong> — компоненты с чёткой единственной
+                  ответственностью легче покрываются юнит- и интеграционными тестами.
+                </li>
+                <li>
+                  <strong>Параллельная разработка</strong> — независимые компоненты могут разрабатываться
+                  разными командами одновременно без конфликтов.
+                </li>
+                <li>
+                  <strong>Упрощение развёртывания</strong> — небольшие компоненты можно деплоить и
+                  масштабировать независимо, снижая время простоя при обновлениях.
+                </li>
+              </ul>
+            </div>
           </div>
         );
       } catch {
@@ -614,6 +640,11 @@ export default function HomePage() {
         let maxLatencyNodeId: number | null = null;
         let maxLatencyValue = -Infinity;
 
+        // Целевые значения: макс. RPS, мин. error_rate, мин. задержка
+        let targetRps = -Infinity;
+        let targetErrorRate = Infinity;
+        let targetLatency = Infinity;
+
         pathNodes.forEach((node: any) => {
           const rps = node.properties?.rps;
           const errorRate = node.properties?.error_rate;
@@ -631,6 +662,10 @@ export default function HomePage() {
             maxLatencyValue = latency;
             maxLatencyNodeId = node.id;
           }
+
+          if (rps !== undefined && rps > targetRps) targetRps = rps;
+          if (errorRate !== undefined && errorRate < targetErrorRate) targetErrorRate = errorRate;
+          if (latency !== undefined && latency < targetLatency) targetLatency = latency;
         });
 
         return (
@@ -655,7 +690,7 @@ export default function HomePage() {
             </div>
 
             {/* Сводка итоговых метрик */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-3">
               <div className="p-3 bg-blue-50 border border-blue-200 rounded">
                 <div className="text-sm text-gray-500">Минимальный RPS</div>
                 <div className="text-xl font-bold">{totalRps}</div>
@@ -668,6 +703,14 @@ export default function HomePage() {
                 <div className="text-sm text-gray-500">Суммарная задержка</div>
                 <div className="text-xl font-bold">{totalLatency?.toFixed(2)} мс</div>
               </div>
+            </div>
+
+            {/* Целевые значения */}
+            <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded text-sm text-gray-600">
+              <strong>Целевые значения в цепочке:</strong>
+              <span className="ml-3">RPS: <strong>{targetRps !== -Infinity ? targetRps : '—'}</strong></span>
+              <span className="ml-3">error_rate: <strong>{targetErrorRate !== Infinity ? (targetErrorRate * 100).toFixed(2) + '%' : '—'}</strong></span>
+              <span className="ml-3">Задержка: <strong>{targetLatency !== Infinity ? targetLatency.toFixed(2) + ' мс' : '—'}</strong></span>
             </div>
 
             {/* Цепочка узлов пути */}
@@ -746,6 +789,32 @@ export default function HomePage() {
                 </li>
               </ul>
             </div>
+
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded text-sm text-gray-700">
+              <strong>Плюсы устранения антипаттерна:</strong>
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>
+                  <strong>Повышение пропускной способности</strong> — устранение узкого места позволяет
+                  всей цепочке обрабатывать нагрузку на уровне лучших компонентов, а не худшего.
+                </li>
+                <li>
+                  <strong>Снижение задержек</strong> — оптимизация медленных узлов сокращает суммарное
+                  время отклика цепочки взаимодействий.
+                </li>
+                <li>
+                  <strong>Повышение надёжности</strong> — снижение error_rate в проблемных компонентах
+                  уменьшает вероятность отказа всей цепочки.
+                </li>
+                <li>
+                  <strong>Предсказуемость поведения под нагрузкой</strong> — сбалансированные характеристики
+                  компонентов исключают непредвиденные деградации при пиковых запросах.
+                </li>
+                <li>
+                  <strong>Упрощение масштабирования</strong> — равномерно распределённые узкие места
+                  позволяют горизонтально масштабировать всю цепочку без точечных «аварийных» мер.
+                </li>
+              </ul>
+            </div>
           </div>
         );
       } catch {
@@ -770,7 +839,7 @@ export default function HomePage() {
         if (!nodes || nodes.length === 0) {
           return (
             <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded text-green-800">
-              <p className="font-medium">Общие критические узлы развёртывания не обнаружены.</p>
+              <p className="font-medium">Cкрытое совместное использование инфраструктуры не обнаружено.</p>
               <p className="text-sm mt-1">
                 Системы, перечисленные в идентификаторах, не имеют общих узлов развёртывания.
               </p>
@@ -914,7 +983,7 @@ export default function HomePage() {
             <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded flex justify-between items-start">
               <div>
                 <h3 className="font-semibold text-lg mb-1">
-                  Обнаружено нарушение периметра развёртывания
+                  Обнаружено нарушение сетевого периметра
                 </h3>
                 <p className="text-sm text-gray-700">
                   В сетевой зоне <strong>{deploymentNodeIdentifier || 'указанный узел'}</strong> найдены
@@ -1063,10 +1132,10 @@ export default function HomePage() {
     switch (analysisType) {
       case 'cycles': return 'Поиск циклических зависимостей';
       case 'singlepoints': return 'Поиск единых точек отказа';
-      case 'godelements': return 'Поиск "божественного объекта"';
-      case 'pathcapacity': return 'Пропускная способность сети';
-      case 'criticalinfrastructure': return 'Поиск критической инфраструктуры (общих узлов развёртывания)';
-      case 'perimeterviolation': return 'Контроль периметра (нарушение периметра развёртывания)';
+      case 'godelements': return 'Поиск "божественных объектов"';
+      case 'pathcapacity': return 'Поиск бутылочных горлышек';
+      case 'criticalinfrastructure': return 'Поиск скрытого совместного использования инфраструктуры';
+      case 'perimeterviolation': return 'Поиск нарушения сетевого периметра';
       default: return '';
     }
   };
@@ -1112,10 +1181,10 @@ export default function HomePage() {
               {[
                 { type: 'cycles', label: 'Поиск циклических зависимостей' },
                 { type: 'singlepoints', label: 'Поиск единых точек отказа' },
-                { type: 'godelements', label: 'Поиск "божественного объекта"' },
-                { type: 'pathcapacity', label: 'Пропускная способность сети' },
-                { type: 'criticalinfrastructure', label: 'Поиск критической инфраструктуры (общих узлов развёртывания)' },
-                { type: 'perimeterviolation', label: 'Контроль периметра (нарушение периметра развёртывания)' },
+                { type: 'godelements', label: 'Поиск "божественных объектов"' },
+                { type: 'pathcapacity', label: 'Поиск бутылочных горлышек' },
+                { type: 'criticalinfrastructure', label: 'Поиск скрытого совместного использования инфраструктуры' },
+                { type: 'perimeterviolation', label: 'Поиск нарушения сетевого периметра' },
               ].map(item => (
                 <button
                   key={item.type}
